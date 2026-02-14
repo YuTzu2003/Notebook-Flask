@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>使用者 - PDF做筆記</title>
+    <link rel="icon" href="/static/logo.ico" type="image/x-icon"/>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="/static/css/admin.css">  
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+<body>
+    {% include 'navbar.html' %}
+    <div class="container " style="margin-top: 80px; max-width: 1100px;">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    Swal.fire({
+                        icon: "{{ 'success' if category=='success' else 'error' }}",
+                        title: "{{ message }}",
+                        timer: 1500,
+                        showConfirmButton: false
+                    });
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h4 class="fw-bold text-dark m-0">使用者管理</h4>
+            <button class="btn btn-dark px-4" onclick="openModal('add')">新增使用者</button>
+        </div>
+
+        <div class="card rounded-3">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th class="ps-4">編號</th>
+                                <th>姓名</th>
+                                <th>職位</th>
+                                <th>地點</th>
+                                <th>登入時間</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in users %}
+                            <tr>
+                                <td class="ps-4 fw-medium text-secondary">{{ user.UserID }}</td>
+                                <td class="fw-bold">{{ user.Name }}</td>
+                                <td>
+                                    {% if user.Position == 'Admin' %}
+                                        <span class="badge bg-danger rounded-1">Admin</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary rounded-1">{{ user.Position }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ user.Location if user.Location else '-' }}</td>
+                                <td class="text-muted small">
+                                    {{ user.Last_login.strftime('%Y-%m-%d %H:%M') if user.Last_login else '-' }}
+                                </td>
+                                <td class="text-end pe-4">
+                                    <div class="btn-group" role="group">
+                                        <button type="button" 
+                                                class="btn btn-sm btn-outline-secondary" 
+                                                data-user='{{ user | tojson | safe }}'
+                                                onclick="editUser(this)">編輯
+                                        </button>
+                                        <button type="button" 
+                                                class="btn btn-sm btn-outline-danger ms-2" 
+                                                onclick="deleteUser('{{ user.ID }}', '{{ user.UserID }}')">刪除
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            
+                            {% if not users %}
+                            <tr><td colspan="6" class="text-center py-5 text-muted">目前沒有使用者資料</td></tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="userModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header border-bottom-0 pb-0">
+                    <h5 class="modal-title fw-bold" id="modalTitle">新增使用者</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body pt-4">
+                    <form id="userForm">
+                        <input type="hidden" id="actionType" value="add">
+                        <input type="hidden" id="hiddenGuid">
+
+                        <div class="mb-3">
+                            <label for="userId" class="form-label fw-bold small text-secondary">編號 (ID)</label>
+                            <input type="text" class="form-control" id="userId" placeholder="請輸入編號" required>
+                            <div class="form-text text-muted mt-1" id="idHelp">修改編號請確保不與現有編號重複</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="userName" class="form-label fw-bold small text-secondary">姓名</label>
+                            <input type="text" class="form-control" id="userName" placeholder="請輸入姓名" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="userPassword" class="form-label fw-bold small text-secondary">密碼</label>
+                            <input type="password" class="form-control" id="userPassword" placeholder="輸入密碼">
+                            <div class="form-text text-muted" id="passwordHelp" style="display:none;">若留空則不修改密碼。</div>
+                        </div>
+
+                        <div class="row g-3">
+                            <div class="col-md-6 mb-3">
+                                <label for="userPosition" class="form-label fw-bold small text-secondary">職位</label>
+                                <select class="form-select" id="userPosition">
+                                    <option value="Admin">管理員 (Admin)</option>
+                                    <option value="Doctor">醫師 (Doctor)</option>
+                                    <option value="Nurse">護理師 (Nurse)</option>
+                                    <option value="CTR">癌登師 (CTR)</option>
+                                    <option value="IT">資訊部 (IT)</option>
+                                    <option value="Staff">一般員工 (Staff)</option>
+                                    <option value="Other">其他 (Other)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="userLocation" class="form-label fw-bold small text-secondary">地點</label>
+                                <input type="text" class="form-control" id="userLocation" placeholder="例如: 虎尾臺大醫院">
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer border-top-0 pt-0 pb-4">
+                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-dark px-4" onclick="saveUser()">儲存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        const userModal = new bootstrap.Modal(document.getElementById('userModal'));
+        
+        function editUser(btnElement) {
+            const userData = JSON.parse(btnElement.getAttribute('data-user'));
+            openModal('edit', userData);
+        }
+
+        // 開啟 Modal
+        function openModal(mode, userData = null) {
+            const title = document.getElementById('modalTitle');
+            const actionType = document.getElementById('actionType');
+            const guidInput = document.getElementById('hiddenGuid');
+            const idInput = document.getElementById('userId');
+            const nameInput = document.getElementById('userName');
+            const pwdInput = document.getElementById('userPassword');
+            const posInput = document.getElementById('userPosition');
+            const locInput = document.getElementById('userLocation');
+            const passwordHelp = document.getElementById('passwordHelp');
+
+            pwdInput.value = '';
+
+            if (mode === 'edit' && userData) {
+                title.innerText = "編輯帳號";
+                actionType.value = "edit";
+
+                guidInput.value = userData.ID;      // GUID
+                idInput.value = userData.UserID;    // UserID
+                idInput.readOnly = false; 
+                
+                passwordHelp.style.display = 'block';
+
+                nameInput.value = userData.Name;
+                posInput.value = userData.Position || 'Staff';
+                locInput.value = userData.Location || '';
+            } else {
+                title.innerText = "新增帳號";
+                actionType.value = "add";
+
+                guidInput.value = '';
+                idInput.value = '';
+                idInput.readOnly = false;                
+                passwordHelp.style.display = 'none';
+
+                nameInput.value = '';
+                posInput.value = 'Staff';
+                locInput.value = '';
+            }
+            userModal.show();
+        }
+
+        // 儲存
+        function saveUser() {
+            const action = document.getElementById('actionType').value;
+            
+            const data = {
+                action: action,
+                id: document.getElementById('hiddenGuid').value,
+                user_id: document.getElementById('userId').value,
+                name: document.getElementById('userName').value,
+                password: document.getElementById('userPassword').value,
+                position: document.getElementById('userPosition').value,
+                location: document.getElementById('userLocation').value
+            };
+
+            if (!data.user_id || !data.name) {
+                alert("請填寫編號與姓名！");
+                return;
+            }
+
+            const saveBtn = document.querySelector('#userModal .btn-dark');
+            const originalText = saveBtn.innerText;
+            saveBtn.disabled = true;
+            saveBtn.innerText = "處理中...";
+
+            fetch('/admin/manage_user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+            .then(res => res.json())
+            .then(result => {
+                if (result.success) {
+                    location.reload(); 
+                } else {
+                    alert("操作失敗：" + (result.message || "未知錯誤"));
+                    saveBtn.disabled = false;
+                    saveBtn.innerText = originalText;
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                alert("發生錯誤");
+                saveBtn.disabled = false;
+                saveBtn.innerText = originalText;
+            });
+        }
+
+        // 刪除
+        function deleteUser(guid, displayId) {
+            if (!confirm(`確定要刪除此編號 ${displayId}？`)) return;
+
+            const data = {
+                action: 'delete',
+                id: guid 
+            };
+
+            fetch('/admin/manage_user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+            .then(res => res.json())
+            .then(result => {
+                if (result.success) {
+                    location.reload();
+                } else {
+                    alert("刪除失敗：" + result.message);
+                }
+            })
+            .catch(err => console.error(err));
+        }
+    </script>
+</body>
+</html>

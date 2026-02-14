@@ -1,0 +1,34 @@
+body {
+    font-family: 'Noto Sans TC', sans-serif;
+    background-color: #f3f4f6;
+    min-height: 100vh;
+    padding-bottom: 4rem;
+}
+
+.navbar {
+    background-color: #ffffff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.navbar-brand {
+    font-weight: 700;
+    color: #0067b8;
+}
+
+.navbar-nav .nav-link {
+    transition: all 0.3s ease;  
+    border-bottom: 3px solid transparent; 
+    padding-bottom: 5px;  
+}
+
+/* 滑鼠移過去的樣式 */
+.navbar-nav .nav-link:hover {
+    color: #ffd000;
+}
+
+.navbar-nav .nav-link.active {
+    color: #000000 !important;  
+    font-weight: 500;    
+    border-bottom: 3px solid #ffd000; 
+}
+

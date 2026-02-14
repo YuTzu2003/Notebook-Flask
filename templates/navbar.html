@@ -1,0 +1,48 @@
+<nav class="navbar navbar-expand-lg navbar-light fixed-top">
+    <div class="container">
+        <a class="navbar-brand d-flex align-items-center gap-2" href="/">
+            <h5 class="m-0 fw-bold text-dark">
+                <img src="/static/logo.png"alt="logo" style="height: 40px;">PDF做筆記
+            </h5>
+        </a>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav mx-auto fw-bold small">
+                <li class="nav-item">
+                    <a class="nav-link {{'active' if request.path == '/transfer' else ''}}" href="#">筆記轉移</a>
+                </li>  
+                <li class="nav-item">
+                    <a class="nav-link {{'active' if request.path.startswith('/docVersion') else ''}}" href="/docVersion">文件版本
+                    </a>
+                </li>  
+                <li class="nav-item">
+                    <a class="nav-link {{'active' if request.path.startswith('/mapping') else ''}}" href="/mapping">版本比對</a>
+                </li>         
+                {% if session.Position == 'Admin' %}                
+                <li class="nav-item">
+                    <a class="nav-link {{'active' if request.endpoint == 'auth.admin_users' else ''}}" href="{{ url_for('auth.admin_users') }}">使用者管理</a>
+                </li>
+                {% endif %}             
+            </ul>
+        </div>
+        <div class="dropdown">
+            <button class="btn btn-light dropdown-toggle d-flex align-items-center border-0 bg-transparent" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                <div class="rounded-circle bg-primary text-white d-flex justify-content-center align-items-center me-2 shadow-sm" style="width: 35px; height: 35px; font-weight:bold;">
+                    {{ session.Name[0] if session.Name else 'U' }}
+                </div>
+                <span class="d-none d-md-block fw-medium">{{ session.Name }}</span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end shadow border-0 mt-2">
+                <li><h6 class="dropdown-header text-uppercase small text-muted">使用者資訊</h6></li>
+                <li><span class="dropdown-item-text">編號: {{ session.UserID }}</span></li>
+                <li><span class="dropdown-item-text">姓名: {{ session.Name }}</span></li>
+                <li><span class="dropdown-item-text">職位: {{ session.Position }}</span></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item text-danger d-flex align-items-center" href="{{ url_for('auth.logout') }}">
+                    <i class="bi bi-box-arrow-right me-2"></i>登出
+                </a></li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<link rel="stylesheet" href="/static/css/navbar.css"> 

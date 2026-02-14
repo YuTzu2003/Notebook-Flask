@@ -1,0 +1,105 @@
+body {
+    font-family: 'Noto Sans TC', sans-serif;
+    background-color: #f3f4f6;
+    min-height: 100vh;
+    padding-bottom: 4rem;
+}
+
+/* 上傳區 */
+.upload-section {
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 2rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    margin-bottom: 2.5rem;
+}
+
+.upload-zone {
+    border: 2px dashed #dee2e6;
+    border-radius: 12px;
+    background-color: #f8f9fa;
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.upload-zone:hover, .upload-zone.drag-over {
+    border-color: #0067b8;
+    background-color: #eef7ff;
+    transform: scale(1.01);
+}
+
+/* 卡片 */
+.doc-card {
+    background: #fff;
+    border: none;
+    border-radius: 12px;
+    transition: transform 0.25s, box-shadow 0.25s;
+    height: 100%;
+    overflow: hidden;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    position: relative;
+}
+
+.doc-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 12px 20px rgba(0,0,0,0.1);
+}
+
+.doc-card:active {
+    transform: translateY(-4px);
+}
+
+.card-img-placeholder {
+    height: 150px;
+    background: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-bottom: 1px solid #f0f0f0;
+    position: relative;
+}
+.card-body {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+.card-icon {
+    font-size: 4rem;
+    color: #dc3545;
+    transition: transform 0.2s;
+}
+
+.doc-card:hover .card-icon {
+    transform: scale(1.1);
+}
+
+.card-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 0.5rem;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.5rem;
+}
+
+.spinner-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255,255,255,0.85);
+    backdrop-filter: blur(4px);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}

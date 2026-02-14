@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>文件版本 - PDF做筆記</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="/static/logo.ico" type="image/x-icon"/>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"> 
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <link rel="stylesheet" href="/static/css/docVersion.css"> 
+</head>
+
+<body class="bg-light">
+
+{% include 'navbar.html' %}
+
+<div class="container" style="margin-top: 90px;">
+    <!-- 上傳區塊 -->
+    {% if session.Position == 'Admin' %}
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+            <form method="POST" enctype="multipart/form-data">
+                <div class="row g-3 align-items-end">
+                    <div class="mb-3">
+                    <h5 class="fw-bold text-dark m-0">發布版本</h5>
+                    <p class="text-muted small mt-1 mb-0">請上傳癌登手冊版本更新PDF</p>
+                </div>
+                    <div class="col-md-4">
+                        <label class="form-label">選擇檔案</label>
+                        <input type="file" class="form-control" name="file" required>
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label">版本號</label>
+                        <input type="text" class="form-control" name="version" placeholder="例如 v1.0">
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label">作者</label>
+                        <input type="text" class="form-control" name="author">
+                    </div>
+
+                    <div class="col-md-2 d-grid">
+                        <button type="submit" class="btn btn-primary">發布版本</button>
+                    </div>
+
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %} 
+    <div class="card border-0 shadow-sm rounded-3">
+        <div class="card-header bg-white border-bottom py-3">
+            <h5 class="mb-0 text-secondary">文件版本</h5>
+        </div>
+
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0 table-custom">
+                    <thead>
+                        <tr>
+                            <th>檔名</th>
+                            <th>版本</th>
+                            <th>頁碼/Size</th> 
+                            <th>作者/上傳者</th>
+                            <th>上傳時間</th>
+                            <th class="text-end pe-4"></th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {% for doc in documents %}
+                        <tr>
+                            <td class="filename">
+                                <div class="d-flex align-items-center">
+                                    <i class="far fa-file-pdf text-danger me-2 fs-5 opacity-75"></i>
+                                    <span class="fw-bold text-dark">{{ doc.FileName }}</span>
+                                </div>
+                            </td>
+                            
+                            <td>
+                                <span class="badge bg-success-subtle text-success border border-secondary border-opacity-25 fw-normal">
+                                    {{ doc.Version }}
+                                </span>
+                            </td>
+                            
+                            <td>
+                                <div class="small text-dark">{{ doc.Pages }} 頁</div>
+                                <div class="small text-muted" style="font-size: 0.8rem;">
+                                    {{ (doc.Size / 1024) | round(1) }} KB
+                                </div>
+                            </td>
+                            
+                            <td>
+                                <div class="d-flex flex-column">
+                                    <span class="small fw-bold text-dark">{{ doc.Author }}</span>
+                                    <span class="small text-muted" style="font-size: 0.75rem;">by {{ doc.Name }}</span>
+                                </div>
+                            </td>
+                            
+                            <td class="text-muted small font-monospace">
+                                {{ doc.UploadTime.strftime('%Y-%m-%d') }}
+                            </td>
+
+                            <td class="text-end pe-4">
+                                <div class="d-flex align-items-center justify-content-end gap-2">                     
+                                    <a href="/docVersion_tool/download/{{ doc.ID }}" class="btn btn-sm btn-outline-dark">下載</a>
+                                    <a href="/docVersion_tool/preview/{{ doc.ID }}" target="_blank" class="btn btn-sm btn-outline-secondary">預覽</a>
+                                    {% if session.Position == 'Admin' %}
+                                    <button type="button" class="btn btn-sm btn-outline-primary" 
+                                            data-bs-toggle="modal" 
+                                            data-bs-target="#editModal"
+                                            data-id="{{ doc.ID }}"
+                                            data-version="{{ doc.Version }}"
+                                            data-author="{{ doc.Author }}">編輯
+                                    </button>
+                                    <form action="/docVersion_tool/delete/{{ doc.ID }}" method="POST" onsubmit="return confirm('確定要刪除這份文件嗎？');" class="d-flex m-0">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">刪除</button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="text-center py-5 text-muted">
+                                <div class="mb-2"><i class="fas fa-folder-open fa-2x opacity-25"></i></div>
+                                目前尚無任何文件資料
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal fade" id="editModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">編輯文件資訊</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      
+      <form action="/docVersion_tool/edit" method="POST">
+          <div class="modal-body">
+            <input type="hidden" name="edit_id" id="modal_id">
+            
+            <div class="mb-3">
+                <label class="form-label">版本號</label>
+                <input type="text" class="form-control" name="edit_version" id="modal_version">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">作者</label>
+                <input type="text" class="form-control" name="edit_author" id="modal_author">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+            <button type="submit" class="btn btn-primary">儲存變更</button>
+          </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+    const flashMessages = JSON.parse('{{ get_flashed_messages(with_categories=true)|tojson|safe }}');
+
+    if (flashMessages.length > 0) {
+        flashMessages.forEach(([category, message]) => {
+            Swal.fire({
+                icon: category === 'success' ? 'success' : 'error',
+                title: message,
+                showConfirmButton: false,
+                timer: 2000
+            });
+        });
+    }
+
+    var editModal = document.getElementById('editModal')
+    editModal.addEventListener('show.bs.modal', function (event) {
+        var button = event.relatedTarget
+        document.getElementById('modal_id').value = button.getAttribute('data-id')
+        document.getElementById('modal_version').value = button.getAttribute('data-version')
+        document.getElementById('modal_author').value = button.getAttribute('data-author')
+    })
+</script>
+</body>
+</html>

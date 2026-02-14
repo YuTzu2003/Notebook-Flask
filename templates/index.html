@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF做筆記</title>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/index.css"> 
+    <link rel="icon" href="/static/logo.ico" type="image/x-icon"/>
+</head>
+<body>
+    {% include 'navbar.html' %}
+
+    <div class="container" style="margin-top: 90px;">
+        
+        <div class="upload-section animate-fade-in">
+            <h4 class="fw-bold mb-4 text-dark">上傳新文件</h4>
+            
+            <div class="upload-zone" id="dropZone">
+                <i class="bi bi-cloud-arrow-up text-primary mb-3" style="font-size: 3.5rem;"></i>
+                <h5 class="fw-bold text-dark">點擊選擇 PDF 檔案 或 拖曳至此</h5>
+                <input type="file" id="pdfInput" hidden accept=".pdf">
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mb-4 px-1">
+            <h4 class="fw-bold m-0 text-dark"><i class="bi bi-clock-history me-2 text-primary"></i>最近的文件</h4>
+            
+            <div class="input-group shadow-sm" style="width: 250px;">
+                <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
+                <input type="text" id="searchInput" class="form-control border-start-0 ps-0" placeholder="搜尋檔名...">
+            </div>
+        </div>
+
+        <div class="row row-cols-1 row-cols-md-2 row-cols-lg-4 g-4" id="docGrid">
+            
+            {% if documents %}
+                {% for doc in documents %}
+                <div class="col doc-item">
+                    <div class="card doc-card h-100">
+                        <div class="card-img-placeholder">
+                            <i class="bi bi-file-earmark-pdf-fill card-icon"></i>
+                            <span class="position-absolute bottom-0 end-0 badge bg-secondary m-2 opacity-75">
+                                {{ doc.Pages }} 頁
+                            </span>
+                        </div>
+                        <div class="card-body d-flex flex-column">
+                            <h5 class="card-title" title="{{ doc.OriginalName }}">{{ doc.OriginalName }}</h5>
+                            
+                            <div class="mt-auto">
+                                <div class="d-flex justify-content-between align-items-end">
+                                    <div class="text-muted small">
+                                        <i class="bi bi-calendar3 me-1"></i> 
+                                        {% if doc.UploadTime %}
+                                            {{ doc.UploadTime.strftime('%Y/%m/%d') }}
+                                        {% else %}
+                                            --/--/--
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="text-secondary mt-2" style="font-size: 0.7rem; letter-spacing: 0.5px;">
+                                    ID: {{ doc.DocID[:8] }}...
+                                </div>
+                                <div class="d-flex gap-2 mt-3">
+                                    <button class="btn btn-outline-primary btn-sm flex-fill" onclick="doc_tool('edit', '{{ doc.DocID }}', event)">
+                                        <i class="bi bi-pencil-square me-1"></i>編輯
+                                    </button>
+                                    <button class="btn btn-outline-danger btn-sm flex-fill" onclick="doc_tool('delete', '{{ doc.DocID }}', event)">
+                                        <i class="bi bi-trash me-1"></i>刪除
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="col-12">
+                    <div class="text-center py-5 bg-white rounded-3 shadow-sm">
+                        <i class="bi bi-inbox text-secondary" style="font-size: 3rem;"></i>
+                        <p class="text-muted mt-3">尚無文件紀錄</p>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div id="loadingOverlay" class="spinner-overlay">
+        <div class="spinner-border text-primary mb-3" style="width: 3.5rem; height: 3.5rem;" role="status"></div>
+        <h5 class="text-dark fw-bold" id="loadingText">正在處理中...</h5>
+        <p class="text-secondary small">正在讀取檔案與標註紀錄</p>
+    </div>
+
+    
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('pdfInput');
+        const overlay = document.getElementById('loadingOverlay');
+        const loadingText = document.getElementById('loadingText');
+
+        // 拖曳上傳
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            if (e.dataTransfer.files.length > 0) {
+                handleUpload(e.dataTransfer.files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleUpload(e.target.files[0]);
+            }
+        });
+
+        // 處理檔案上傳
+        async function handleUpload(file) {
+            if (file.type !== 'application/pdf') {
+                alert('上傳錯誤：請上傳 PDF 檔案！');
+                return;
+            }
+
+            loadingText.textContent = "正在上傳PDF中...";
+            overlay.style.display = 'flex';
+
+            const fd = new FormData();
+            fd.append("pdf", file);
+
+            try {
+                const response = await fetch("/upload_pdf", { 
+                    method: "POST", 
+                    body: fd 
+                });
+
+                if (!response.ok) throw new Error("伺服器回應錯誤");
+
+                const data = await response.json();
+                const sessionData = {
+                    doc_id: data.doc_id,           // UUID
+                    pdf_name: data.pdf_name,       // UUID.pdf
+                    original_name: data.original_name,
+                    total_pages: data.total_pages,
+                    mods: data.mods || {},         // 新檔案通常為空
+                    width: data.width,
+                    height: data.height,
+                    has_toc: data.has_embedded_toc
+                };
+
+                localStorage.setItem("currentPdfSession", JSON.stringify(sessionData));
+                window.location.href = "/edit"; 
+
+            } catch (err) {
+                console.error(err);
+                alert("上傳失敗，請檢查網路或檔案大小。");
+                overlay.style.display = 'none';
+                fileInput.value = ''; 
+            }
+        }
+
+        // --- 舊檔案載入 ---
+        async function loadExistingDoc(docId) {
+            loadingText.textContent = "正在讀取標註紀錄...";
+            overlay.style.display = 'flex';
+
+            const response = await fetch(`/get_doc_info/${docId}`);
+            const data = await response.json();
+            const sessionData = {
+                doc_id: data.doc_id,
+                pdf_name: data.pdf_name,
+                original_name: data.original_name,
+                total_pages: data.total_pages,
+                mods: data.mods, // 標註JSON
+                width: data.width,
+                height: data.height,
+                has_toc: data.has_embedded_toc
+            };
+
+            localStorage.setItem("currentPdfSession", JSON.stringify(sessionData));
+            window.location.href = "/edit";
+
+        }
+        // 工具庫
+        async function doc_tool(actionType, docId, event) {
+            if (event) {
+                event.stopPropagation();
+            }
+
+            if (actionType === 'delete') {
+                if (!confirm("確定要刪除這份文件嗎？")) {
+                    return;
+                }
+                loadingText.textContent = "正在刪除文件...";
+            } else {
+                loadingText.textContent = "正在讀取文件與標註紀錄...";
+            }
+
+            overlay.style.display = 'flex';
+
+            try {
+                const response = await fetch("/doc_tool", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        action: actionType, // edit or delete
+                        doc_id: docId
+                    })
+                });
+
+                const result = await response.json();
+
+                if (actionType === 'delete') {
+                    alert("刪除成功！");
+                    window.location.reload();
+                    
+                } else if (actionType === 'edit') {
+                    const data = result.data;
+                    const sessionData = {
+                        doc_id: data.doc_id,
+                        pdf_name: data.pdf_name,
+                        original_name: data.original_name,
+                        total_pages: data.total_pages,
+                        mods: data.mods, 
+                        width: data.width,
+                        height: data.height,
+                        has_toc: data.has_toc
+                    };
+
+                    localStorage.setItem("currentPdfSession", JSON.stringify(sessionData));
+                    window.location.href = "/edit"; 
+                }
+
+            } catch (err) {
+                console.error(err);
+                alert("錯誤：" + err.message);
+                overlay.style.display = 'none'; 
+            }
+        }
+
+        // --- 搜尋 ---
+        document.getElementById('searchInput').addEventListener('keyup', function(e) {
+            const term = e.target.value.toLowerCase();
+            const items = document.querySelectorAll('.doc-item');
+            items.forEach(item => {
+                const title = item.querySelector('.card-title').textContent.toLowerCase();
+                if (title.includes(term)) {
+                    item.style.display = 'block';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        });
+
+    </script>
+</body>
+</html>
