@@ -221,16 +221,13 @@ def save():
                 page.insert_image(fitz.Rect(o["left"], o["top"], o["left"] + o["width"]*o.get("scaleX", 1), o["top"] + o["height"]*o.get("scaleY", 1)), stream=img_data)
             
             elif o.get("type") == "path":
-                points = o.get("abs_points", [])
-                
-                if points:
-                    annot = page.add_ink_annot([points])                 
-                    stroke_color = parse_color(o.get("stroke", "#061fbd"))
-                    annot.set_colors(stroke=stroke_color)
-                    width = o.get("strokeWidth", 3) 
-                    annot.set_border(width=width)
-                    annot.set_opacity(o.get("opacity", 0.5))
-                    annot.update()
+                abs_points = o.get("abs_points", [])
+                if not abs_points: continue
+                annot = page.add_polyline_annot(abs_points)
+                annot.set_colors(stroke=parse_color(o.get("stroke", "#ffff00")))
+                annot.set_opacity(0.5) 
+                annot.set_border(width=o.get("strokeWidth", 1) * o.get("scaleX", 1))
+                annot.update()
 
     out_buffer = io.BytesIO()
     doc.save(out_buffer)

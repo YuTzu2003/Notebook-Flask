@@ -1,0 +1,548 @@
+﻿Old_Page,Matched_New_Page,Similarity_Score,Status
+1,1,0.712,Medium
+3,3,1.0,High Confidence
+4,4,0.5763,Medium
+5,5,0.5518,Medium
+6,6,0.7054,Medium
+7,7,0.2952,Low Confidence
+9,9,0.8825,High Confidence
+10,10,0.9323,High Confidence
+11,11,0.9901,High Confidence
+12,12,0.9855,High Confidence
+13,13,0.9542,High Confidence
+14,14,0.8874,High Confidence
+15,15,0.8885,High Confidence
+16,16,0.8643,High Confidence
+17,17,0.8401,High Confidence
+18,18,0.8237,High Confidence
+19,19,0.9351,High Confidence
+21,21,1.0,High Confidence
+23,23,0.612,Medium
+24,24,0.8417,High Confidence
+25,25,0.9306,High Confidence
+26,26,0.8048,High Confidence
+27,27,0.9038,High Confidence
+28,28,0.8541,High Confidence
+29,29,1.0,High Confidence
+30,30,0.9766,High Confidence
+31,31,0.9935,High Confidence
+32,32,1.0,High Confidence
+33,33,1.0,High Confidence
+34,34,0.9313,High Confidence
+35,35,1.0,High Confidence
+36,36,1.0,High Confidence
+37,37,0.9569,High Confidence
+38,38,0.8342,High Confidence
+39,39,0.9692,High Confidence
+40,40,1.0,High Confidence
+41,41,0.9201,High Confidence
+42,42,0.5963,Medium
+43,44,0.6721,Medium
+44,44,0.3844,Low Confidence
+45,45,0.3964,Low Confidence
+46,46,0.7694,Medium
+47,47,0.6417,Medium
+48,48,0.5731,Medium
+49,49,0.679,Medium
+50,50,0.7464,Medium
+51,51,0.8693,High Confidence
+52,52,0.7158,Medium
+53,53,0.6967,Medium
+54,54,0.7841,Medium
+55,55,0.6385,Medium
+57,57,1.0,High Confidence
+59,59,1.0,High Confidence
+61,61,1.0,High Confidence
+62,62,1.0,High Confidence
+63,63,0.9806,High Confidence
+64,64,1.0,High Confidence
+65,65,1.0,High Confidence
+66,66,0.9262,High Confidence
+67,67,0.7429,Medium
+68,68,1.0,High Confidence
+69,69,1.0,High Confidence
+71,71,0.8191,High Confidence
+72,72,0.6837,Medium
+73,73,0.9626,High Confidence
+74,74,0.9834,High Confidence
+75,75,0.9363,High Confidence
+76,76,0.8036,High Confidence
+77,77,0.9735,High Confidence
+78,78,0.9556,High Confidence
+79,79,0.8934,High Confidence
+80,80,0.7809,Medium
+81,81,0.5407,Medium
+82,82,0.9753,High Confidence
+83,83,0.9846,High Confidence
+84,84,1.0,High Confidence
+85,85,0.9857,High Confidence
+86,86,0.6463,Medium
+87,87,0.7709,Medium
+88,88,0.9288,High Confidence
+89,89,0.5112,Medium
+90,98,0.3023,Low Confidence
+91,95,0.7345,Medium
+92,96,0.9808,High Confidence
+93,97,0.9,High Confidence
+94,98,0.8912,High Confidence
+95,99,0.8551,High Confidence
+96,100,0.9046,High Confidence
+97,101,1.0,High Confidence
+98,102,0.8649,High Confidence
+99,103,0.9569,High Confidence
+100,104,0.8834,High Confidence
+101,105,0.769,Medium
+102,106,0.9328,High Confidence
+103,107,0.9825,High Confidence
+104,108,0.9609,High Confidence
+105,109,0.875,High Confidence
+106,110,0.8685,High Confidence
+107,111,0.9234,High Confidence
+108,113,0.8981,High Confidence
+109,114,0.9084,High Confidence
+110,115,0.2714,Low Confidence
+111,116,0.4138,Low Confidence
+112,117,0.9089,High Confidence
+113,118,0.9636,High Confidence
+114,119,0.8582,High Confidence
+115,120,0.8129,High Confidence
+116,121,0.8044,High Confidence
+117,122,0.7417,Medium
+118,123,1.0,High Confidence
+119,124,0.9472,High Confidence
+120,125,0.9756,High Confidence
+121,126,0.9571,High Confidence
+122,127,0.9043,High Confidence
+123,128,0.912,High Confidence
+124,129,0.8989,High Confidence
+125,130,0.8427,High Confidence
+126,131,0.8573,High Confidence
+127,132,0.9173,High Confidence
+129,133,1.0,High Confidence
+131,135,0.5445,Medium
+132,136,0.4356,Low Confidence
+133,137,1.0,High Confidence
+134,138,0.9076,High Confidence
+135,139,0.7838,Medium
+136,140,0.8841,High Confidence
+137,141,0.8051,High Confidence
+138,142,1.0,High Confidence
+139,143,0.8633,High Confidence
+140,144,0.8105,High Confidence
+141,145,0.9286,High Confidence
+142,146,1.0,High Confidence
+143,147,0.9305,High Confidence
+144,148,1.0,High Confidence
+145,149,0.9305,High Confidence
+146,150,0.7704,Medium
+147,151,0.9368,High Confidence
+148,152,0.9953,High Confidence
+149,153,0.9146,High Confidence
+150,154,0.9713,High Confidence
+151,155,1.0,High Confidence
+152,156,0.9144,High Confidence
+153,157,0.9849,High Confidence
+154,158,0.6036,Medium
+155,159,0.9162,High Confidence
+156,163,0.9233,High Confidence
+157,164,0.9948,High Confidence
+158,165,0.8813,High Confidence
+159,166,0.2625,Low Confidence
+160,167,0.1599,Low Confidence
+161,168,0.9327,High Confidence
+162,169,1.0,High Confidence
+163,170,0.9515,High Confidence
+164,171,0.9982,High Confidence
+165,172,0.996,High Confidence
+166,173,0.967,High Confidence
+167,174,1.0,High Confidence
+168,175,0.7729,Medium
+169,176,0.9954,High Confidence
+170,177,1.0,High Confidence
+171,179,1.0,High Confidence
+173,181,0.8553,High Confidence
+174,182,0.7555,Medium
+175,183,0.6206,Medium
+176,184,0.8079,High Confidence
+177,185,0.5625,Medium
+178,186,0.9366,High Confidence
+179,187,0.4518,Low Confidence
+180,188,0.6454,Medium
+181,189,0.7514,Medium
+182,190,0.7248,Medium
+183,189,0.699,Medium
+184,192,0.9614,High Confidence
+185,193,0.9368,High Confidence
+186,194,1.0,High Confidence
+187,195,0.982,High Confidence
+188,196,0.9618,High Confidence
+189,197,0.9596,High Confidence
+190,198,0.9938,High Confidence
+191,199,0.5976,Medium
+192,200,0.6886,Medium
+193,201,0.851,High Confidence
+194,203,0.8554,High Confidence
+195,203,0.868,High Confidence
+196,205,0.9731,High Confidence
+197,206,0.901,High Confidence
+198,207,0.8218,High Confidence
+199,208,0.9277,High Confidence
+200,209,0.9734,High Confidence
+201,210,0.8943,High Confidence
+202,211,0.8204,High Confidence
+203,212,0.9352,High Confidence
+204,213,0.9206,High Confidence
+205,214,0.9599,High Confidence
+206,215,0.9056,High Confidence
+207,216,0.9623,High Confidence
+208,217,1.0,High Confidence
+209,218,1.0,High Confidence
+210,219,0.9838,High Confidence
+211,220,0.9588,High Confidence
+212,221,0.9503,High Confidence
+213,222,0.9042,High Confidence
+214,223,0.9039,High Confidence
+215,224,0.9979,High Confidence
+216,225,1.0,High Confidence
+217,226,0.8431,High Confidence
+218,227,0.9498,High Confidence
+219,228,0.8292,High Confidence
+220,229,0.906,High Confidence
+221,230,0.8256,High Confidence
+222,231,0.8208,High Confidence
+223,232,1.0,High Confidence
+224,233,0.9971,High Confidence
+225,234,1.0,High Confidence
+226,235,0.898,High Confidence
+227,236,0.9658,High Confidence
+228,237,0.9406,High Confidence
+229,238,1.0,High Confidence
+230,239,1.0,High Confidence
+231,240,0.9549,High Confidence
+232,241,0.9343,High Confidence
+233,242,0.9919,High Confidence
+234,243,0.9798,High Confidence
+235,244,0.8357,High Confidence
+236,245,0.9808,High Confidence
+237,246,0.9503,High Confidence
+238,247,0.8822,High Confidence
+239,248,0.7894,Medium
+240,249,0.9793,High Confidence
+241,250,0.8115,High Confidence
+242,251,0.9488,High Confidence
+243,252,0.806,High Confidence
+244,253,0.9863,High Confidence
+245,254,0.9118,High Confidence
+246,255,0.7769,Medium
+247,256,0.9563,High Confidence
+248,257,0.8066,High Confidence
+249,258,0.9344,High Confidence
+250,259,0.8005,High Confidence
+251,260,0.9252,High Confidence
+252,261,0.9841,High Confidence
+253,262,0.9785,High Confidence
+254,263,0.7736,Medium
+255,264,1.0,High Confidence
+256,265,0.9485,High Confidence
+257,266,0.998,High Confidence
+258,267,0.9204,High Confidence
+259,268,0.8486,High Confidence
+260,269,1.0,High Confidence
+261,270,0.9889,High Confidence
+262,271,0.7984,Medium
+263,272,0.976,High Confidence
+264,273,0.7925,Medium
+265,274,0.8704,High Confidence
+266,275,0.8005,High Confidence
+267,276,0.9612,High Confidence
+268,277,0.633,Medium
+269,278,0.9482,High Confidence
+270,279,0.9883,High Confidence
+271,280,1.0,High Confidence
+272,281,0.9543,High Confidence
+273,282,0.9588,High Confidence
+274,283,0.7624,Medium
+275,284,0.8159,High Confidence
+276,285,0.8331,High Confidence
+277,286,0.6477,Medium
+278,287,0.9461,High Confidence
+279,288,1.0,High Confidence
+280,289,0.9291,High Confidence
+281,290,1.0,High Confidence
+282,291,0.876,High Confidence
+283,292,0.9927,High Confidence
+284,293,0.8905,High Confidence
+285,294,0.883,High Confidence
+286,295,0.971,High Confidence
+287,296,0.8574,High Confidence
+288,297,0.8125,High Confidence
+289,298,1.0,High Confidence
+290,299,0.9744,High Confidence
+291,300,0.9876,High Confidence
+292,301,1.0,High Confidence
+293,302,0.9917,High Confidence
+294,303,0.8937,High Confidence
+295,304,1.0,High Confidence
+296,305,0.8347,High Confidence
+297,306,0.8984,High Confidence
+298,307,0.9691,High Confidence
+299,308,1.0,High Confidence
+300,309,0.909,High Confidence
+301,310,0.9367,High Confidence
+302,311,1.0,High Confidence
+303,312,1.0,High Confidence
+304,313,0.896,High Confidence
+305,314,0.9343,High Confidence
+307,315,1.0,High Confidence
+309,317,0.9196,High Confidence
+310,318,0.8723,High Confidence
+311,319,0.9759,High Confidence
+312,320,0.9428,High Confidence
+313,321,0.8994,High Confidence
+314,322,0.8833,High Confidence
+315,323,0.8111,High Confidence
+316,324,0.9944,High Confidence
+317,325,1.0,High Confidence
+319,327,0.9092,High Confidence
+321,329,1.0,High Confidence
+323,331,0.985,High Confidence
+324,332,0.9851,High Confidence
+325,333,0.7938,Medium
+326,334,0.9664,High Confidence
+327,335,0.7905,Medium
+328,336,0.9419,High Confidence
+329,337,0.9766,High Confidence
+330,338,1.0,High Confidence
+331,339,0.9978,High Confidence
+332,340,1.0,High Confidence
+333,345,1.0,High Confidence
+335,347,0.9386,High Confidence
+336,347,0.9386,High Confidence
+337,347,0.9386,High Confidence
+338,347,0.9386,High Confidence
+339,347,0.9386,High Confidence
+340,347,0.9386,High Confidence
+341,347,0.7731,Medium
+342,347,0.7731,Medium
+343,347,0.7731,Medium
+344,347,0.7251,Medium
+345,349,1.0,High Confidence
+347,351,1.0,High Confidence
+348,352,1.0,High Confidence
+349,353,1.0,High Confidence
+350,354,1.0,High Confidence
+351,355,1.0,High Confidence
+353,357,0.7942,Medium
+354,368,0.8723,High Confidence
+355,358,0.8388,High Confidence
+356,359,0.8625,High Confidence
+357,360,0.6233,Medium
+358,361,0.8922,High Confidence
+359,391,0.6423,Medium
+360,364,0.827,High Confidence
+361,366,0.7381,Medium
+362,365,0.8874,High Confidence
+363,366,0.9475,High Confidence
+364,367,0.8954,High Confidence
+366,369,0.7559,Medium
+367,370,0.7934,Medium
+368,371,0.7655,Medium
+369,372,0.8072,High Confidence
+370,373,0.8887,High Confidence
+371,374,0.8139,High Confidence
+372,368,0.6226,Medium
+373,376,0.9643,High Confidence
+374,377,0.5478,Medium
+375,378,0.8529,High Confidence
+376,379,0.4552,Low Confidence
+377,391,0.6353,Medium
+378,381,0.647,Medium
+379,463,0.6397,Medium
+380,463,0.6712,Medium
+381,383,0.8706,High Confidence
+382,384,0.9261,High Confidence
+383,385,0.8955,High Confidence
+384,384,0.9479,High Confidence
+385,387,0.8991,High Confidence
+386,388,0.9627,High Confidence
+387,389,0.4573,Low Confidence
+388,390,0.7849,Medium
+389,392,0.9232,High Confidence
+390,393,0.8404,High Confidence
+391,394,0.8481,High Confidence
+392,395,0.7898,Medium
+393,396,0.7129,Medium
+394,397,0.8943,High Confidence
+395,398,0.8202,High Confidence
+396,399,0.876,High Confidence
+397,400,0.8026,High Confidence
+398,401,0.9684,High Confidence
+399,403,1.0,High Confidence
+401,405,0.9478,High Confidence
+402,406,0.9646,High Confidence
+403,407,1.0,High Confidence
+405,409,0.9992,High Confidence
+406,410,0.994,High Confidence
+407,411,1.0,High Confidence
+408,412,1.0,High Confidence
+409,413,0.989,High Confidence
+410,414,0.7773,Medium
+411,415,1.0,High Confidence
+412,416,1.0,High Confidence
+413,417,0.9814,High Confidence
+414,418,1.0,High Confidence
+415,419,0.9907,High Confidence
+416,420,1.0,High Confidence
+417,421,0.9939,High Confidence
+418,422,0.9857,High Confidence
+419,423,1.0,High Confidence
+420,424,0.9919,High Confidence
+421,425,1.0,High Confidence
+422,426,0.9931,High Confidence
+423,427,1.0,High Confidence
+424,428,0.9624,High Confidence
+425,429,1.0,High Confidence
+426,430,1.0,High Confidence
+427,431,1.0,High Confidence
+428,432,0.991,High Confidence
+429,433,1.0,High Confidence
+430,434,0.997,High Confidence
+431,435,0.9669,High Confidence
+432,436,1.0,High Confidence
+433,437,1.0,High Confidence
+434,439,0.9985,High Confidence
+435,440,0.9797,High Confidence
+436,441,1.0,High Confidence
+437,442,1.0,High Confidence
+438,443,1.0,High Confidence
+439,444,1.0,High Confidence
+441,447,0.869,High Confidence
+442,448,0.9551,High Confidence
+443,449,0.9466,High Confidence
+444,450,0.841,High Confidence
+445,451,0.4651,Low Confidence
+446,452,0.994,High Confidence
+447,453,1.0,High Confidence
+449,428,0.1749,Low Confidence
+450,456,0.4568,Low Confidence
+451,456,0.6056,Medium
+452,417,0.417,Low Confidence
+453,416,0.2982,Low Confidence
+454,24,0.2315,Low Confidence
+455,455,0.4623,Low Confidence
+456,428,0.2104,Low Confidence
+457,456,0.7622,Medium
+459,1,0.0,Low Confidence
+461,17,0.5101,Medium
+462,23,0.2034,Low Confidence
+463,96,0.448,Low Confidence
+464,102,0.3634,Low Confidence
+465,124,0.3597,Low Confidence
+466,124,0.4681,Low Confidence
+467,126,0.5731,Medium
+468,157,0.4275,Low Confidence
+469,174,0.8739,High Confidence
+470,193,0.257,Low Confidence
+471,196,0.2045,Low Confidence
+472,201,0.2191,Low Confidence
+473,199,0.1501,Low Confidence
+474,201,0.732,Medium
+475,202,0.3495,Low Confidence
+476,235,0.2076,Low Confidence
+477,279,0.3454,Low Confidence
+478,279,0.3984,Low Confidence
+479,288,0.5098,Medium
+480,304,0.3259,Low Confidence
+481,376,0.2669,Low Confidence
+482,414,0.7082,Medium
+483,415,0.4354,Low Confidence
+484,439,0.8189,High Confidence
+485,23,0.3166,Low Confidence
+486,25,0.8042,High Confidence
+487,106,0.1909,Low Confidence
+488,124,0.5318,Medium
+489,126,0.551,Medium
+490,171,0.8796,High Confidence
+491,182,0.2732,Low Confidence
+492,202,0.8279,High Confidence
+493,203,0.4283,Low Confidence
+494,288,0.8617,High Confidence
+495,288,0.816,High Confidence
+496,305,0.2065,Low Confidence
+497,318,0.5512,Medium
+498,319,0.3627,Low Confidence
+499,322,0.7509,Medium
+500,419,0.3395,Low Confidence
+501,24,0.4924,Low Confidence
+502,83,0.446,Low Confidence
+503,108,0.6207,Medium
+504,171,0.7957,Medium
+505,198,0.5122,Medium
+506,293,0.3171,Low Confidence
+507,294,0.742,Medium
+508,294,0.5621,Medium
+509,294,0.2473,Low Confidence
+510,363,0.447,Low Confidence
+511,367,0.4431,Low Confidence
+512,400,0.2509,Low Confidence
+513,416,0.9221,High Confidence
+514,422,0.8839,High Confidence
+515,428,0.1787,Low Confidence
+516,25,0.7212,Medium
+517,101,0.3897,Low Confidence
+518,118,0.6741,Medium
+519,171,0.8607,High Confidence
+520,196,0.278,Low Confidence
+521,204,0.7279,Medium
+522,204,0.8513,High Confidence
+523,224,0.5818,Medium
+524,224,0.423,Low Confidence
+525,225,0.9755,High Confidence
+526,264,0.6736,Medium
+527,264,0.5981,Medium
+528,264,0.7264,Medium
+529,266,0.3117,Low Confidence
+530,407,0.2326,Low Confidence
+531,416,0.9944,High Confidence
+532,419,0.9488,High Confidence
+533,421,0.9345,High Confidence
+534,427,0.9945,High Confidence
+535,432,0.9604,High Confidence
+536,34,0.3212,Low Confidence
+537,104,0.3449,Low Confidence
+538,154,0.179,Low Confidence
+539,171,0.9632,High Confidence
+540,176,0.9544,High Confidence
+541,194,0.705,Medium
+542,201,0.8304,High Confidence
+543,225,0.9732,High Confidence
+544,225,0.9524,High Confidence
+545,322,0.3469,Low Confidence
+546,405,0.9069,High Confidence
+547,406,0.7912,Medium
+548,416,0.6588,Medium
+549,10,0.3531,Low Confidence
+550,32,0.5222,Medium
+551,87,0.3542,Low Confidence
+552,96,0.6301,Medium
+553,117,0.8344,High Confidence
+554,118,0.937,High Confidence
+555,119,0.7132,Medium
+556,120,0.9243,High Confidence
+557,121,0.6934,Medium
+558,140,0.5997,Medium
+559,169,0.9384,High Confidence
+560,171,0.8157,High Confidence
+561,171,0.8917,High Confidence
+562,265,0.3256,Low Confidence
+563,279,0.5542,Medium
+564,405,0.9024,High Confidence
+565,1,0.0,Low Confidence
+566,413,0.9907,High Confidence
+567,422,0.5694,Medium
+568,447,0.8688,High Confidence
+569,448,0.9398,High Confidence
+570,449,0.9541,High Confidence
+571,450,0.7888,Medium
+572,451,0.4291,Low Confidence
+573,452,0.994,High Confidence

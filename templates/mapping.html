@@ -4,319 +4,253 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>版本比對 - PDF做筆記</title>
-    <link href="https://cdn.jsdelivr.net/npm/jquery-easy-loading@1.3.0/dist/jquery.loading.min.css" rel="stylesheet" />    
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script> 
-    <script src="https://cdn.jsdelivr.net/npm/jquery-easy-loading@1.3.0/dist/jquery.loading.min.js"></script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <link rel="stylesheet" href="/static/css/docVersion.css"> 
+    <link href="https://cdn.jsdelivr.net/npm/jquery-easy-loading@1.3.0/dist/jquery.loading.min.css" rel="stylesheet" />
     <link rel="icon" href="/static/logo.ico" type="image/x-icon"/>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery-easy-loading@1.3.0/dist/jquery.loading.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link rel="stylesheet" href="/static/css/mapping.css"> 
 </head>
+
 <body>
-
     {% include 'navbar.html' %}
-
-    <div class="container main-container" style="margin-top: 90px;">
+    <div class="container" style="margin-top: 90px;">
         {% if session.Position == 'Admin' %}
-        <div class="top-section ">
-            <div class="card card-form p-4">
-                <div class="mb-3">
-                    <h5 class="fw-bold text-dark m-0">版本比對設定</h5>
-                    <p class="text-muted small mt-1 mb-0">請選擇舊版與新版癌登手冊PDF進行頁碼比對</p>
-                </div>
+        <div class="card border-0 shadow-sm rounded-3 mb-4">
+            <div class="card-body p-4">
+                <h5 class="fw-bold mb-1">版本比對設定</h5>
+                <p class="text-muted small mb-4">請選擇舊版與新版癌登手冊PDF進行頁碼比對</p>
 
                 <form action="/mapping/doc_mapping" method="post" id="MappingForm">
                     <div class="row g-3 align-items-end">
                         <div class="col-md-5">
-                            <label for="oldPdfSelect" class="form-label fw-bold text-secondary">選擇舊版文件</label>
-                            <select class="form-select" id="oldPdfSelect" name="old_pdf_id" required>
-                                    <option value="" selected disabled>請選擇檔案...</option>
-                                    {% for pdf in files %}
-                                        <option value="{{ pdf.ID }}">{{ pdf.FileName }}</option>
-                                    {% endfor %}
+                            <label class="form-label fw-bold text-secondary">選擇舊版文件</label>
+                            <select class="form-select" name="old_pdf_id" required>
+                                <option value="" selected disabled>請選擇檔案...</option>
+                                {% for pdf in files %}
+                                    <option value="{{ pdf.ID }}">{{ pdf.FileName }}</option>
+                                {% endfor %}
                             </select>
                         </div>
+
                         <div class="col-md-5">
-                            <label for="newPdfSelect" class="form-label fw-bold text-primary">選擇新版文件</label>
-                            <select class="form-select" id="newPdfSelect" name="new_pdf_id" required>
+                            <label class="form-label fw-bold text-primary">選擇新版文件</label>
+                            <select class="form-select" name="new_pdf_id" required>
                                 <option value="" selected disabled>請選擇檔案...</option>
-                                    {% for pdf in files %}
-                                        <option value="{{ pdf.ID }}">{{ pdf.FileName }}</option>
-                                    {% endfor %}
+                                {% for pdf in files %}
+                                    <option value="{{ pdf.ID }}">{{ pdf.FileName }}</option>
+                                {% endfor %}
                             </select>
                         </div>
 
                         <div class="col-md-2">
-                            <button class="btn btn-secondary w-100 py-2" type="submit" onclick="showLoading(this)">開始比對</button>
+                            <button type="submit" class="btn btn-secondary w-100">開始比對</button>
                         </div>
                     </div>
                 </form>
             </div>
         </div>
-        {% endif %} 
-        <div class="bottom-section">
-            <div class="table-header-title">
-                <h5 class="m-0 text-secondary">版本比對紀錄</h5>
+        {% endif %}
+
+        <div class="card border-0 shadow-sm rounded-3">
+            <div class="card-header bg-white border-bottom py-3">
+                <h5 class="mb-0 text-secondary">版本比對紀錄</h5>
             </div>
-    
-    <div class="table-scroll-area">
-        <table class="table table-hover mb-0 align-middle">
-            <thead class="bg-light">
-                <tr>
-                    <th class="ps-4" style="width: 30%;">舊版文件</th>
-                    <th style="width: 30%;">新版文件</th>
-                    <th style="width: 20%;">時間 / 狀態</th>
-                    {% if session.Position == 'Admin' %}
-                        <th class="text-center" style="width: 5%;">發布</th>
-                     {% endif %}
-                    <th class="text-end pe-4" style="width: 20%;"></th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for row in history %}
-                <tr>
-                    {% if row.IsPublish != False  or session.Position == 'Admin'%}
-                    <td class="ps-4">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <span class="text-break lh-sm me-2">
-                                {{ row.OldFileName }}
-                            </span>
-                            <button class="btn btn-sm btn-link text-secondary p-0 flex-shrink-0" 
-                                    onclick="previewPdf('{{ row.OldFileName }}')" 
-                                    title="預覽舊版">
-                                <i class="bi bi-eye"></i>
-                            </button>
-                        </div>
-                    </td>
 
-                    <td>
-                        <div class="d-flex justify-content-between align-items-start">
-                            <span class="text-primary fw-medium text-break lh-sm me-2">
-                                {{ row.NewFileName }}
-                            </span>
-                            <button class="btn btn-sm btn-link text-primary p-0 flex-shrink-0" 
-                                    onclick="previewPdf('{{ row.NewFileName }}')"
-                                    title="預覽新版">
-                                <i class="bi bi-eye"></i>
-                            </button>
-                        </div>
-                    </td>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th class="ps-4" style="width: 30%;">舊版文件</th>
+                                <th style="width: 30%;">新版文件</th>
+                                <th style="width: 20%;">時間 / 狀態</th>
+                                {% if session.Position == 'Admin' %}
+                                    <th class="text-center" style="width: 5%;">發布</th>
+                                {% endif %}
+                                <th class="text-end pe-4" style="width: 20%;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in history %}
+                            {% if row.IsPublish != False or session.Position == 'Admin' %}
+                            <tr>
+                                <td class="ps-4 text-break">
+                                    {{ row.OldFileName }}
+                                </td>
 
-                    <td>
-                        <div class="d-flex align-items-center flex-wrap gap-2">
-                            <span class="text-muted small font-monospace">
-                                {{ row.CreateTime.strftime('%Y-%m-%d') }}
-                            </span>
-                            
-                            {% if row.Status %}
-                                <span class="badge rounded-pill bg-success bg-opacity-10 text-success border border-success border-opacity-10" style="font-size: 0.75rem;">Success</span>
-                            {% else %}
-                                <span class="badge rounded-pill bg-danger bg-opacity-10 text-danger border border-danger border-opacity-10" style="font-size: 0.75rem;">Error</span>
-                            {% endif %}
-                        </div>
-                    </td>
-                    {% if session.Position == 'Admin' %}
-                    <td class="text-center">
-                        <div class="form-check form-switch d-flex justify-content-center">
-                            <input class="form-check-input" type="checkbox" role="switch" 
-                                   style="cursor: pointer; transform: scale(1.2);"
-                                   id="publish_{{ row.RecordID }}"
-                                   {% if row.IsPublish %}checked{% endif %}
-                                   {% if not row.Status %}disabled{% endif %}
-                                   onchange="togglePublish('{{ row.RecordID }}', this)"
->
-                        </div>
-                    </td>
-                    {% endif %} 
-                    <td class="text-end pe-4">
-                        <button class="btn btn-sm btn-outline-primary me-1" 
-                                data-bs-toggle="modal" 
-                                data-bs-target="#detailModal_{{ row.RecordID }}">詳細資訊</button>
+                                <td class="text-primary fw-medium text-break">
+                                    {{ row.NewFileName }}
+                                </td>
 
-                        {% if session.Position == 'Admin' %}
-                            <form method="POST" action="/mapping/action" style="display:inline;">
-                                <input type="hidden" name="action" value="delete">
-                                <input type="hidden" name="record_id" value="{{ row.RecordID }}">
-                                <button type="submit" class="btn btn-sm btn-outline-danger"
-                                        onclick="return confirm('確定要刪除此筆紀錄嗎？')">
-                                    刪除
-                                </button>
-                            </form>
-                        {% endif %}   
-                    </td>
-                    {% endif %}
-                </tr>
+                                <td>
+                                    <div class="d-flex align-items-center flex-wrap gap-2">
+                                        <span class="text-muted small font-monospace">
+                                            {{ row.CreateTime.strftime('%Y-%m-%d') }}
+                                        </span>
+                                        
+                                        {% if row.Status %}
+                                            <span class="badge rounded-pill bg-success bg-opacity-10 text-success border border-success border-opacity-10" style="font-size: 0.75rem;">Success</span>
+                                        {% else %}
+                                            <span class="badge rounded-pill bg-danger bg-opacity-10 text-danger border border-danger border-opacity-10" style="font-size: 0.75rem;">Error</span>
+                                        {% endif %}
+                                    </div>
+                                </td>
 
-                <div class="modal fade" id="detailModal_{{ row.RecordID }}" tabindex="-1" aria-labelledby="modalLabel_{{ row.RecordID }}" aria-hidden="true">
-                    <div class="modal-dialog modal-dialog-centered modal-lg">
-                        <div class="modal-content border-0 shadow">
-                            <div class="modal-header bg-light">
-                                <h5 class="modal-title fw-bold" id="modalLabel_{{ row.RecordID }}">
-                                    <i class="bi bi-info-circle me-2"></i>比對詳細資訊
-                                </h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                            </div>
-                            <div class="modal-body p-4">
-                                <div class="row g-4 mb-4">
-                                    <div class="col-md-6">
-                                        <div class="p-3 border rounded bg-light h-100">
-                                            <h6 class="text-secondary border-bottom pb-2 mb-3">舊版文件</h6>
-                                            <p class="mb-1 fw-bold text-break">{{ row.OldFileName }}</p>
-                                            <span class="badge bg-secondary mb-2">版本: v{{ row.OldVersion if row.OldVersion else 'Unknown' }}</span>
-                                            <div class="mt-2">
-                                                <form action="/mapping/action" method="POST" target="_blank">                              
-                                                    <input type="hidden" name="action" value="preview">
-                                                    <input type="hidden" name="record_id" value="{{ row.RecordID }}">                                                   
-                                                    <input type="hidden" name="type" value="old">
-                                                    <button type="submit" class="btn btn-sm btn-outline-secondary w-100">
-                                                        <i class="bi bi-file-pdf me-1"></i>預覽文件
-                                                    </button>
-                                                </form>
-                                            </div>
-                                        </div>
+                                {% if session.Position == 'Admin' %}
+                                <td class="text-center">
+                                    <div class="form-check form-switch d-flex justify-content-center">
+                                        <input class="form-check-input"
+                                            type="checkbox"
+                                            role="switch"
+                                            {% if row.IsPublish %}checked{% endif %}
+                                            {% if not row.Status %}disabled{% endif %}
+                                            onchange="togglePublish('{{ row.RecordID }}', this)">
                                     </div>
-                                    <div class="col-md-6">
-                                        <div class="p-3 border rounded bg-primary bg-opacity-10 h-100">
-                                            <h6 class="text-primary border-bottom border-primary border-opacity-25 pb-2 mb-3">新版文件</h6>
-                                            <p class="mb-1 fw-bold text-break text-primary">{{ row.NewFileName }}</p>
-                                            <span class="badge bg-primary mb-2">版本: v{{ row.NewVersion if row.NewVersion else 'Unknown' }}</span>
-                                            <div class="mt-2">
-                                                <form action="/mapping/action" method="POST" target="_blank">                              
-                                                    <input type="hidden" name="action" value="preview">
-                                                    <input type="hidden" name="record_id" value="{{ row.RecordID }}">                                                   
-                                                    <input type="hidden" name="type" value="new">
-                                                    <button type="submit" class="btn btn-sm btn-outline-primary w-100">
-                                                        <i class="bi bi-file-pdf me-1"></i>預覽文件
-                                                    </button>
-                                                </form>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="row g-3">
-                                    <div class="col-sm-4">
-                                        <label class="small text-muted">操作人員</label>
-                                        <div class="fw-medium">{{ row.Name }}</div>
-                                    </div>
-                                    <div class="col-sm-4">
-                                        <label class="small text-muted">執行時間</label>
-                                        <div class="fw-medium">{{ row.CreateTime.strftime('%Y-%m-%d %H:%M:%S') }}</div>
-                                    </div>
-                                    <div class="col-sm-4">
-                                        <label class="small text-muted">比對狀態</label>
-                                        <div>
-                                            {% if row.Status %}
-                                                <span class="text-success fw-bold"><i class="bi bi-check-circle me-1"></i>Success</span>
-                                            {% else %}
-                                                <span class="text-danger fw-bold"><i class="bi bi-x-circle me-1"></i>Error</span>
-                                            {% endif %}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="modal-footer bg-light">
-                                {% if row.Status %}
-                                    <form method="POST" action="/mapping/action" style="display:inline;">
-                                        <input type="hidden" name="action" value="download">
+                                </td>
+                                {% endif %}
+
+                                <td class="text-end pe-4">
+                                    <button class="btn btn-sm btn-outline-primary me-1"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#detailModal_{{ row.RecordID }}">
+                                        詳細
+                                    </button>
+
+                                    {% if session.Position == 'Admin' %}
+                                    <form method="POST" action="/mapping/action" class="d-inline">
+                                        <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="record_id" value="{{ row.RecordID }}">
-                                        <button type="submit" class="btn btn-success"></i>下載檔案(CSV)
+                                        <button type="submit"
+                                                class="btn btn-sm btn-outline-danger"
+                                                onclick="return confirm('確定要刪除嗎？')">
+                                            刪除
                                         </button>
                                     </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endif %}
+                            {% else %}
+                            <tr>
+                                <td colspan="5" class="text-center py-5 text-muted">目前沒有任何比對紀錄</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    {% for row in history %}
+    <div class="modal fade" id="detailModal_{{ row.RecordID }}" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-light">
+                    <h5 class="modal-title fw-bold">比對詳細資訊</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body p-4">
+                    <div class="row g-4 mb-4">
+                        <div class="col-md-6">
+                            <div class="p-3 border rounded bg-light h-100">
+                                <h6 class="text-secondary border-bottom pb-2 mb-3">舊版文件</h6>
+                                <p class="fw-bold text-break">{{ row.OldFileName }}</p>
+                                <span class="badge bg-secondary">
+                                    版本: v{{ row.OldVersion if row.OldVersion else 'Unknown' }}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="p-3 border rounded bg-primary bg-opacity-10 h-100">
+                                <h6 class="text-primary border-bottom pb-2 mb-3">新版文件</h6>
+                                <p class="fw-bold text-break text-primary">{{ row.NewFileName }}</p>
+                                <span class="badge bg-primary">
+                                    版本: v{{ row.NewVersion if row.NewVersion else 'Unknown' }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-sm-4">
+                            <small class="text-muted">操作人員</small>
+                            <div class="fw-medium">{{ row.Name }}</div>
+                        </div>
+                        <div class="col-sm-4">
+                            <small class="text-muted">執行時間</small>
+                            <div>{{ row.CreateTime.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+                        </div>
+                        <div class="col-sm-4">
+                            <small class="text-muted">比對狀態</small>
+                            <div>
+                                {% if row.Status %}
+                                    <span class="text-success fw-bold">Success</span>
                                 {% else %}
-                                    <button class="btn btn-success" disabled>無法下載</button>
+                                    <span class="text-danger fw-bold">Error</span>
                                 {% endif %}
-                                <button type="button" class="btn btn-secondary text-decoration-none" data-bs-dismiss="modal">關閉</button>
                             </div>
                         </div>
                     </div>
                 </div>
-                {% else %}
-                <tr>
-                    <td colspan="5" class="text-center py-5 text-muted bg-light">
-                        <i class="bi bi-inbox fs-1 d-block mb-2"></i>
-                        目前沒有任何比對紀錄
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
+
+                <div class="modal-footer bg-light">
+                    {% if row.Status %}
+                    <form method="POST" action="/mapping/action">
+                        <input type="hidden" name="action" value="download">
+                        <input type="hidden" name="record_id" value="{{ row.RecordID }}">
+                        <button type="submit" class="btn btn-success">下載檔案(CSV)</button>
+                    </form>
+                    {% else %}
+                    <button class="btn btn-success" disabled>無法下載</button>
+                    {% endif %}
+                    <button class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+                </div>
+            </div>
         </div>
     </div>
+    {% endfor %}
 
     <script>
-        $(document).ready(function() {
-            $('#MappingForm').on('submit', function(e) {
-                if (this.checkValidity()) {
-                    $('body').loading({
-                        message: 'loading...'
-                    });
-                    
-                    const btn = $('#btnSubmit');
-                    const originalWidth = btn.outerWidth();
-                    btn.css('width', originalWidth + 'px');
-                    btn.html('<span class="spinner-border spinner-border-sm me-2"></span>loading...').addClass('disabled');
-                }
-            });
-        });
+    $('#MappingForm').on('submit', function () {
+        if (this.checkValidity()) {
+            $('body').loading({ message: '處理中...' });
+            const btn = $(this).find('button[type="submit"]');
+            btn.html('<span class="spinner-border spinner-border-sm me-2"></span>處理中');
+            btn.prop('disabled', true);
+        }
+    });
 
     const flashMessages = JSON.parse('{{ get_flashed_messages(with_categories=true)|tojson|safe }}');
-
-    if (flashMessages.length > 0) {
-        flashMessages.forEach(([category, message]) => {
-            Swal.fire({
-                icon: category === 'success' ? 'success' : 'error',
-                title: message,
-                showConfirmButton: false,
-                timer: 2000
-            });
+    flashMessages.forEach(([category, message]) => {
+        Swal.fire({
+            icon: category === 'success' ? 'success' : 'error',
+            title: message,
+            showConfirmButton: false,
+            timer: 2000
         });
-    }
+    });
 
     function togglePublish(recordId, checkbox) {
-
-        const publishValue = checkbox.checked ? 1 : 0;
-
         const form = document.createElement("form");
         form.method = "POST";
         form.action = "/mapping/action";
 
-        const actionInput = document.createElement("input");
-        actionInput.type = "hidden";
-        actionInput.name = "action";
-        actionInput.value = "toggle_publish";
-
-        const idInput = document.createElement("input");
-        idInput.type = "hidden";
-        idInput.name = "record_id";
-        idInput.value = recordId;
-
-        const publishInput = document.createElement("input");
-        publishInput.type = "hidden";
-        publishInput.name = "publish";
-        publishInput.value = publishValue;
-        form.appendChild(actionInput);
-        form.appendChild(idInput);
-        form.appendChild(publishInput);
+        form.innerHTML = `
+            <input type="hidden" name="action" value="toggle_publish">
+            <input type="hidden" name="record_id" value="${recordId}">
+            <input type="hidden" name="publish" value="${checkbox.checked ? 1 : 0}">
+        `;
         document.body.appendChild(form);
         form.submit();
     }
-
-    function showLoading(btn) {
-        const oldSelect = document.getElementById('oldPdfSelect');
-        const newSelect = document.getElementById('newPdfSelect');
-        if (oldSelect.value && newSelect.value) {
-            const originalWidth = btn.offsetWidth;
-            btn.style.width = originalWidth + 'px';
-            btn.innerHTML ='<span class="spinner-border spinner-border-sm me-2"></span>處理中';
-            btn.classList.add('disabled');
-        }
-    }
-
-</script>
+    </script>
 
 </body>
 </html>

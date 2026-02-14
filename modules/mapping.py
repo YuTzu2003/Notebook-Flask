@@ -5,16 +5,6 @@ import re
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-
-# old_pdf = "Longform-Manual_Official-version_20251224.pdf"
-# new_pdf = "Longform-Manual_Official-version_20260123.pdf"
-
-# df_old = extract_text_with_tables(old_pdf)
-# df_new = extract_text_with_tables(new_pdf)
-
-# mapping_version(df_old, df_new, output_report="mapping_addtable.csv")
-
-# ===== 抽取 PDF 每頁文字（段落 + 表格） =====
 def extract_text_with_tables(pdf_path, ignore_header_ratio=0.1, ignore_footer_ratio=0.1):
     doc = fitz.open(pdf_path)
     data = []
@@ -56,7 +46,6 @@ def extract_text_with_tables(pdf_path, ignore_header_ratio=0.1, ignore_footer_ra
     return pd.DataFrame(data)
 
 
-# ===== 比對舊版 vs 新版 PDF（直接吃 DataFrame） =====
 def mapping_version(df_old, df_new, output_report="mapping.csv"):
     df_old = df_old.dropna(subset=['content'])
     df_new = df_new.dropna(subset=['content'])

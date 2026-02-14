@@ -98,12 +98,12 @@
 
                 <div class="toolbar-bottom d-flex align-items-center justify-content-center gap-3">
                     <div class="d-flex align-items-center gap-2">
-                        <input type="color" id="mainColor" value="#0a9bf5" class="form-control form-control-color form-control-sm border-0 shadow-sm" onchange="updateBrush()" title="筆刷/文字顏色">
-                        <input type="number" id="mainSize" value="20" class="form-control form-control-sm text-center shadow-sm" onchange="updateBrush()" style="width:60px" title="大小 (px)">
+                        <input type="color" id="mainColor" value="#0a9bf5" class="form-control form-control-color form-control-sm border-0 shadow-sm" oninput="updateStyle('color')" title="筆刷/文字顏色">
+                        <input type="number" id="mainSize" value="20" class="form-control form-control-sm text-center shadow-sm" oninput="updateStyle('size')" style="width:60px" title="大小 (px)">
                     </div>
                     <div class="vr mx-1"></div>
                     <div class="d-flex align-items-center gap-2">
-                        <select id="fontFamily" class="form-select form-select-sm shadow-sm" style="width: 120px;" onchange="updateActiveText()">
+                        <select id="fontFamily" class="form-select form-select-sm shadow-sm" style="width: 120px;" onchange="updateStyle('font')">
                             <option value="Noto Sans TC">思源黑體</option>
                             <option value="Microsoft JhengHei">微軟正黑體</option>
                             <option value="Times New Roman" selected>Times New Roman</option>
@@ -119,6 +119,7 @@
                     </div>
                     <input type="file" id="imgInput" hidden accept="image/*">
                     <div class="vr mx-1"></div>
+                    <button class="btn btn-outline-secondary btn-sm shadow-sm px-3" onclick="selectAll()" title="全選 (Ctrl+A)">全選</button>
                     <button class="btn btn-outline-danger btn-sm shadow-sm px-3" onclick="deleteObj()">刪除</button>
                 </div>
             </div>
@@ -152,7 +153,9 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        const canvas = new fabric.Canvas("c");
+        const canvas = new fabric.Canvas("c", {
+            preserveObjectStacking: true // 優化：選取時不會強制把物件拉到最上層，體驗較好
+        });
         const hoverBox = document.getElementById('hoverPreview');
         const previewTxt = document.getElementById('previewText');
         const previewImg = document.getElementById('previewImg');
@@ -162,7 +165,7 @@
         let isRefreshing = false, tempNoteImage = null;
         const noteModal = new bootstrap.Modal(document.getElementById('noteModal'));
 
-        // --- 便籤顯示與懸浮邏輯 ---
+        // --- 便籤顯示與懸浮邏輯 (保持不變) ---
         function getPreviewLabel(str, hasImage) {
             let base = str ? (str.length > 8 ? str.substring(0, 8) + "..." : str) : "新便籤";
             return hasImage ? "📷 " + base : "🏷️ " + base;
@@ -193,6 +196,44 @@
             hoverBox.style.display = 'none';
         });
 
+        // --- 優化：事件監聽：選取物件時，UI 自動更新 ---
+        canvas.on('selection:created', syncUIWithSelection);
+        canvas.on('selection:updated', syncUIWithSelection);
+        canvas.on('selection:cleared', () => {
+            // 取消選取時，不需要重置 UI，保留上次設定即可，或根據需求重置
+            document.getElementById("boldBtn").classList.remove("active");
+        });
+
+        function syncUIWithSelection(e) {
+            const activeObj = e.selected[0];
+            if (!activeObj) return;
+
+            // 如果選取的是文字
+            if (activeObj.type === 'i-text' || activeObj.type === 'text') {
+                // 更新顏色選擇器
+                if (activeObj.fill && typeof activeObj.fill === 'string') {
+                    // 簡單轉換 hex (Fabric 有時回傳 rgb)
+                    // 這裡簡化處理，假設用戶多使用工具列選色
+                    if (activeObj.fill.startsWith('#')) {
+                        document.getElementById("mainColor").value = activeObj.fill;
+                    }
+                }
+                // 更新字體
+                document.getElementById("fontFamily").value = activeObj.fontFamily;
+                // 更新粗體按鈕
+                const isBold = activeObj.fontWeight === 'bold' || activeObj.fontWeight === 700;
+                document.getElementById("boldBtn").classList.toggle("active", isBold);
+                
+                // 關閉繪圖模式 (優化體驗：選字時自動關閉筆)
+                if (canvas.isDrawingMode) toggleDrawMode();
+            }
+            // 如果選取的是筆跡 (Path)
+            else if (activeObj.type === 'path') {
+                if (activeObj.stroke) document.getElementById("mainColor").value = activeObj.stroke;
+                if (activeObj.strokeWidth) document.getElementById("mainSize").value = activeObj.strokeWidth;
+            }
+        }
+
         // --- 初始化 ---
         window.onload = function() {
             const storedData = localStorage.getItem("currentPdfSession");
@@ -202,9 +243,12 @@
             originalWidth = pdfData.width; originalHeight = pdfData.height;
             if (!pdfData.mods) pdfData.mods = {};
             setTimeout(() => { fitToWidth(); }, 100);
+            
+            // 初始化筆刷
+            updateStyle('init');
         };
 
-        // --- 頁面管理 (插入/刪除) ---
+        // --- 頁面管理 (保持不變) ---
         async function addBlankPage() {
             if (!confirm(`確定要在第 ${currentPage + 1} 頁之後插入空白頁嗎？`)) return;
             saveCurrent(); isRefreshing = true;
@@ -244,7 +288,7 @@
             } catch(e) { alert("連線失敗"); } finally { isRefreshing = false; }
         }
 
-        // --- 便籤編輯與附件 ---
+        // --- 便籤編輯與附件 (保持不變) ---
         function handleNoteImgChange(input) {
             if (input.files && input.files[0]) {
                 const reader = new FileReader();
@@ -266,10 +310,12 @@
             isStickyMode = !isStickyMode;
             document.getElementById("stickyBtn").classList.toggle("active", isStickyMode);
             canvas.defaultCursor = isStickyMode ? 'crosshair' : 'default';
+            // 如果開啟便籤，自動關閉繪圖模式
             if(isStickyMode && canvas.isDrawingMode) toggleDrawMode();
         }
 
         canvas.on('mouse:down', function(opt) {
+            // 如果在便籤模式且沒有點到物件
             if (isStickyMode && !opt.target) {
                 const p = canvas.getPointer(opt.e);
                 const sticky = new fabric.Textbox(getPreviewLabel("", false), {
@@ -279,7 +325,7 @@
                     rx: 6, ry: 6, textAlign: 'center'
                 });
                 canvas.add(sticky).setActiveObject(sticky);
-                toggleStickyMode();
+                toggleStickyMode(); // 加完一個後自動切換回選取模式，體驗較好
             }
         });
 
@@ -308,7 +354,7 @@
             }
         }
 
-        // --- 渲染核心 ---
+        // --- 渲染核心 (保持不變) ---
         function renderPage(idx) {
             if (idx < 0 || idx >= pdfData.total_pages) return;
             if (!isFirstLoad && !isRefreshing && currentScale === window.lastRenderScale) saveCurrent();
@@ -341,8 +387,8 @@
         function saveCurrent() {
             const objects = canvas.getObjects().filter(o => !o.isBackground);
             pdfData.mods[currentPage] = objects.map(o => {
-                let data = o.toObject(['selectable', 'data_type', 'noteText', 'noteImage', 'fill', 'stroke', 'strokeWidth', 'opacity', 'scaleX', 'scaleY', 'text', 'fontSize', 'src', 'path', 'pathOffset', 'left', 'top', 'width', 'height', 'backgroundColor']);
-                // 座標標準化 (存儲不隨縮放改變的原始點)
+                let data = o.toObject(['selectable', 'data_type', 'noteText', 'noteImage', 'fill', 'stroke', 'strokeWidth', 'opacity', 'scaleX', 'scaleY', 'text', 'fontSize', 'src', 'path', 'pathOffset', 'left', 'top', 'width', 'height', 'backgroundColor', 'fontFamily', 'fontWeight']);
+                // 座標標準化
                 if (o.type === 'path') {
                     const matrix = o.calcTransformMatrix();
                     data.abs_points = o.path.filter(p => p[0] === 'M' || p[0] === 'L').map(p => { 
@@ -363,29 +409,129 @@
         function applyZoom(s) { if (!isFirstLoad) saveCurrent(); currentScale = s; document.getElementById("zoomLevel").innerText = Math.round(s * 100) + "%"; renderPage(currentPage); }
         function changePage(d) { renderPage(currentPage + d); }
         function jumpToPage() { const p = parseInt(document.getElementById("jumpPage").value) - 1; if(p>=0 && p<pdfData.total_pages) renderPage(p); }
-        function deleteObj() { const o = canvas.getActiveObject(); if(o) canvas.remove(o); }
         
-        function toggleDrawMode() { 
-            canvas.isDrawingMode = !canvas.isDrawingMode; 
-            document.getElementById("drawBtn").classList.toggle("active", canvas.isDrawingMode); 
-            if(canvas.isDrawingMode){ 
-                if(isStickyMode) toggleStickyMode(); 
-                canvas.freeDrawingBrush = new fabric.PencilBrush(canvas); 
-                updateBrush(); 
-            } 
-        }
-        function updateBrush() { 
-            const hex = document.getElementById("mainColor").value, r = parseInt(hex.slice(1,3), 16), g = parseInt(hex.slice(3,5), 16), b = parseInt(hex.slice(5,7), 16); 
-            if(canvas.freeDrawingBrush) {
-                canvas.freeDrawingBrush.color = `rgba(${r},${g},${b},0.6)`; 
-                canvas.freeDrawingBrush.width = parseInt(document.getElementById("mainSize").value); 
+        function deleteObj() { 
+            const activeObjects = canvas.getActiveObjects();
+            if (activeObjects.length) {
+                canvas.discardActiveObject();
+                activeObjects.forEach(function(object) {
+                    canvas.remove(object);
+                });
+                saveCurrent(); // 刪除後自動儲存
             }
         }
-        function addText() { const t = new fabric.IText("文字", { left: 100, top: 100, fontSize: 20, fill: document.getElementById("mainColor").value, fontFamily: document.getElementById("fontFamily").value }); canvas.add(t).setActiveObject(t); }
-        function updateActiveText() { const o = canvas.getActiveObject(); if(o && (o.type === 'i-text' || o.type === 'text')){ o.set({fontFamily: document.getElementById("fontFamily").value, fontWeight: document.getElementById("boldBtn").classList.contains("active") ? 'bold' : 'normal', fill: document.getElementById("mainColor").value}); canvas.renderAll(); } }
-        function toggleBold() { document.getElementById("boldBtn").classList.toggle("active"); updateActiveText(); }
+        
+        // --- 優化：繪圖模式切換 ---
+        function toggleDrawMode() { 
+            canvas.isDrawingMode = !canvas.isDrawingMode; 
+            const btn = document.getElementById("drawBtn");
+            btn.classList.toggle("active", canvas.isDrawingMode);
+            
+            if(canvas.isDrawingMode){ 
+                // 進入繪圖模式
+                if(isStickyMode) toggleStickyMode(); // 如果便籤開著就關掉
+                canvas.discardActiveObject(); // 取消當前選取
+                canvas.requestRenderAll();
+                
+                canvas.freeDrawingBrush = new fabric.PencilBrush(canvas); 
+                updateStyle('brush'); // 套用當前顏色大小
+                canvas.defaultCursor = 'crosshair';
+            } else {
+                // 退出繪圖模式 - 關鍵修正：確保變回可選取狀態
+                canvas.defaultCursor = 'default';
+                canvas.selection = true; // 允許框選
+                // 這裡如果不做處理，Fabric 有時會卡住，所以強制設回 default
+            }
+        }
 
-        // --- 儲存與下載 ---
+        // --- 優化：統一的樣式更新函數 (雙向綁定) ---
+        // type: 'color', 'size', 'font', 'brush', 'init'
+        function updateStyle(type) { 
+            const color = document.getElementById("mainColor").value;
+            const size = parseInt(document.getElementById("mainSize").value);
+            const font = document.getElementById("fontFamily").value;
+            const activeObjs = canvas.getActiveObjects();
+
+            // 1. 更新筆刷 (無論有無選取物件，筆刷設定都要更新，供下次繪圖用)
+            if (canvas.freeDrawingBrush) {
+                // 將 hex 轉為 rgba 增加透明度，模擬螢光筆效果 (可選)
+                // 這裡保持原本邏輯，使用半透明
+                const r = parseInt(color.slice(1,3), 16), g = parseInt(color.slice(3,5), 16), b = parseInt(color.slice(5,7), 16);
+                canvas.freeDrawingBrush.color = `rgba(${r},${g},${b},0.6)`;
+                canvas.freeDrawingBrush.width = size;
+            }
+
+            // 2. 如果有選取物件，即時改變它們的屬性
+            if (activeObjs.length > 0 && type !== 'brush' && type !== 'init') {
+                activeObjs.forEach(obj => {
+                    if (type === 'color' || type === 'init') {
+                        if (obj.type === 'i-text' || obj.type === 'text') {
+                            obj.set('fill', color);
+                        } else if (obj.type === 'path') {
+                            obj.set('stroke', `rgba(${parseInt(color.slice(1,3), 16)},${parseInt(color.slice(3,5), 16)},${parseInt(color.slice(5,7), 16)},0.6)`);
+                        }
+                    }
+                    if (type === 'size') {
+                        // 筆跡改粗細，文字可選改字號(這裡暫不改文字大小以免排版亂掉，或可視需求開啟)
+                        if (obj.type === 'path') obj.set('strokeWidth', size);
+                        // if (obj.type === 'i-text') obj.set('fontSize', size); 
+                    }
+                    if (type === 'font') {
+                        if (obj.type === 'i-text' || obj.type === 'text') {
+                            obj.set('fontFamily', font);
+                        }
+                    }
+                });
+                canvas.requestRenderAll();
+                saveCurrent(); // 修改後自動儲存
+            }
+        }
+
+        // 粗體切換 (支援選取修改)
+        function toggleBold() { 
+            const btn = document.getElementById("boldBtn");
+            btn.classList.toggle("active");
+            const isBold = btn.classList.contains("active");
+            
+            const activeObjs = canvas.getActiveObjects();
+            if (activeObjs.length > 0) {
+                activeObjs.forEach(obj => {
+                    if (obj.type === 'i-text' || obj.type === 'text') {
+                        obj.set('fontWeight', isBold ? 'bold' : 'normal');
+                    }
+                });
+                canvas.requestRenderAll();
+                saveCurrent();
+            }
+        }
+
+        function addText() { 
+            // 點擊文字時，自動關閉繪圖模式
+            if(canvas.isDrawingMode) toggleDrawMode();
+
+            const t = new fabric.IText("文字", { 
+                left: 100, top: 100, fontSize: 20, 
+                fill: document.getElementById("mainColor").value, 
+                fontFamily: document.getElementById("fontFamily").value,
+                fontWeight: document.getElementById("boldBtn").classList.contains("active") ? 'bold' : 'normal'
+            }); 
+            canvas.add(t).setActiveObject(t); 
+            // 新增後自動聚焦，方便直接打字
+            t.enterEditing();
+            t.selectAll();
+        }
+
+        // --- 優化：全選功能 ---
+        function selectAll() {
+            canvas.discardActiveObject();
+            const sel = new fabric.ActiveSelection(canvas.getObjects().filter(o => !o.isBackground), { 
+                canvas: canvas,
+            });
+            canvas.setActiveObject(sel);
+            canvas.requestRenderAll();
+        }
+
+        // --- 儲存與下載 (保持不變) ---
         async function download_save(btn, isDownload) {
             saveCurrent(); btn.innerHTML = '處理中...'; btn.disabled = true;
             try {
@@ -405,7 +551,7 @@
         function save(btn) { download_save(btn, false); }
         function download(btn) { download_save(btn, true); }
 
-        // --- 目錄解析 ---
+        // --- 目錄解析 (保持不變) ---
         async function analyzeStructure() {
             try {
                 const r = await fetch("/analyze_toc", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pdf_name: pdfData.pdf_name, toc_pages: document.getElementById("tocRange").value, offset: document.getElementById("pageOffset").value }) });
@@ -428,7 +574,21 @@
             if (activeItem) { activeItem.classList.add('active'); activeItem.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
         }
 
-        document.addEventListener('keydown', e => { if(e.key === 'Delete' && canvas.getActiveObject()) deleteObj(); });
+        // --- 鍵盤快捷鍵 ---
+        document.addEventListener('keydown', e => { 
+            // Delete 刪除
+            if(e.key === 'Delete' && canvas.getActiveObject()) {
+                // 避免在打字時刪除物件
+                const active = canvas.getActiveObject();
+                if (!(active.isEditing)) deleteObj();
+            }
+            // Ctrl+A 全選
+            if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+                e.preventDefault(); // 防止選中網頁文字
+                selectAll();
+            }
+        });
+
         document.getElementById("imgInput").onchange = function(e) { const reader = new FileReader(); reader.onload = f => fabric.Image.fromURL(f.target.result, img => { img.scaleToWidth(200); canvas.add(img).setActiveObject(img); }); reader.readAsDataURL(e.target.files[0]); };
     </script> 
 </body>
