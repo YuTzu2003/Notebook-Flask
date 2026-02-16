@@ -166,14 +166,81 @@ canvas {
      height: calc(100vh - 80px); 
 }
 
+#wrap {
+    position: relative;
+    background-color: #e3e3e7;
+    overflow: auto;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 30px;
+}
+
+.page-stack {
+    position: relative;
+    background: white;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    overflow: hidden;
+}
+
+.pdf-render-canvas {
+    display: block;
+    position: absolute;
+    top: 0; left: 0;
+    z-index: 1; 
+}
+
+.canvas-container {
+    position: absolute !important;
+    top: 0; left: 0;
+    z-index: 2; 
+    mix-blend-mode: multiply; 
+}
+
+.textLayer {
+    position: absolute;
+    top: 0; left: 0;
+    z-index: 3;
+    opacity: 1;
+    line-height: 1.0;
+}
+
+.textLayer span {
+    color: transparent;
+    cursor: text;
+}
+
+.textLayer ::selection { 
+    background: rgba(0, 153, 255, 0.2); 
+    color: transparent; 
+}
+.textLayer ::-moz-selection { 
+    background: rgba(0, 153, 255, 0.2); 
+    color: transparent; 
+}
+
+body.mode-text-select .textLayer,
+body.mode-highlight .textLayer,
+body.mode-underline .textLayer { pointer-events: auto; } 
+body.mode-text-select .canvas-container,
+body.mode-highlight .canvas-container,
+body.mode-underline .canvas-container { pointer-events: none; } 
+body.mode-drawing .canvas-container,
+body.mode-object-edit .canvas-container { pointer-events: auto; }
+body.mode-underline .canvas-container { pointer-events: none; }
+body.mode-drawing .textLayer,
+body.mode-object-edit .textLayer { pointer-events: none; }
+body.mode-drawing { cursor: crosshair; }
+body.mode-highlight .textLayer { cursor: text; }
+
 @media (max-width: 768px) {
     .page-control-group {
         position: static !important; /* 取消絕對定位 */
         transform: none !important;  /* 取消位移 */
-        margin: 10px auto 0 auto;    /* 上方留白並水平置中 */
-        order: 3;                    /* 排到最後面 (因為父層有 flex-wrap) */
-        width: 100%;                 /* 佔滿寬度 */
-        justify-content: center;     /* 內容置中 */
+        margin: 10px auto 0 auto;    
+        order: 3;                   
+        width: 100%;                
+        justify-content: center;   
     }
     
     .toolbar-top {

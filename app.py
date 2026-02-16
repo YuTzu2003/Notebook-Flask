@@ -21,15 +21,24 @@ FONT_PATH = "C:/Windows/Fonts/msjh.ttc"
 app.secret_key = "replace-with-a-secret-key"
 
 def parse_color(color_str):
-    if not color_str: return (0, 0, 0)
-    if color_str.startswith('rgb'):
-        nums = re.findall(r"\d+\.?\d*", color_str)
+    if not color_str: 
+        return (1, 1, 0) 
+    
+    if color_str.startswith('rgba'):
+        nums = re.findall(r"(\d+\.?\d*)", color_str)
         if len(nums) >= 3:
             return tuple(float(nums[i]) / 255.0 for i in range(3))
-    hex_str = color_str.lstrip('#')
-    if len(hex_str) == 6:
-        return tuple(int(hex_str[i:i+2], 16) / 255.0 for i in (0, 2, 4))
-    return (0, 0, 0)
+            
+    elif color_str.startswith('rgb'):
+        nums = re.findall(r"(\d+\.?\d*)", color_str)
+        if len(nums) >= 3:
+            return tuple(float(nums[i]) / 255.0 for i in range(3))
+            
+    elif color_str.startswith('#'):
+        hex_str = color_str.lstrip('#')
+        if len(hex_str) == 6:
+            return tuple(int(hex_str[i:i+2], 16) / 255.0 for i in (0, 2, 4))          
+    return (1, 1, 0)
 
 def parse_page_range(range_str):
     pages = []
@@ -113,25 +122,36 @@ def upload_pdf():
         "has_embedded_toc": len(toc_simple) > 0
     })
 
-@app.route("/get_page_image/<doc_id>/<int:page_num>")
-def get_page_image(doc_id, page_num):
+# @app.route("/get_page_image/<doc_id>/<int:page_num>")
+# def get_page_image(doc_id, page_num):
+#     filename = doc_id if doc_id.lower().endswith('.pdf') else f"{doc_id}.pdf"
+#     pdf_path = os.path.join(UPLOAD_Folder, filename)
+
+#     if not os.path.isfile(pdf_path):
+#         return "PDF not found", 404
+
+#     try:
+#         with fitz.open(pdf_path) as doc:
+#             if not (0 <= page_num < len(doc)):
+#                 return "Page out of range", 404
+
+#             pix = doc[page_num].get_pixmap(matrix=fitz.Matrix(2, 2))
+#             img_io = io.BytesIO(pix.tobytes("png"))
+            
+#         return send_file(img_io, mimetype='image/png')
+#     except Exception as e:
+#         return f"Error processing PDF: {str(e)}", 500
+
+@app.route("/get_pdf_content/<doc_id>")
+@login_required
+def get_pdf_content(doc_id):
     filename = doc_id if doc_id.lower().endswith('.pdf') else f"{doc_id}.pdf"
     pdf_path = os.path.join(UPLOAD_Folder, filename)
 
     if not os.path.isfile(pdf_path):
         return "PDF not found", 404
 
-    try:
-        with fitz.open(pdf_path) as doc:
-            if not (0 <= page_num < len(doc)):
-                return "Page out of range", 404
-
-            pix = doc[page_num].get_pixmap(matrix=fitz.Matrix(2, 2))
-            img_io = io.BytesIO(pix.tobytes("png"))
-            
-        return send_file(img_io, mimetype='image/png')
-    except Exception as e:
-        return f"Error processing PDF: {str(e)}", 500
+    return send_file(pdf_path, mimetype='application/pdf')
 
 @app.route("/add_blank_page", methods=["POST"])
 @login_required
@@ -220,6 +240,7 @@ def save():
                 img_data = base64.b64decode(o["src"].split(",", 1)[1])
                 page.insert_image(fitz.Rect(o["left"], o["top"], o["left"] + o["width"]*o.get("scaleX", 1), o["top"] + o["height"]*o.get("scaleY", 1)), stream=img_data)
             
+            # 隨意繪圖
             elif o.get("type") == "path":
                 abs_points = o.get("abs_points", [])
                 if not abs_points: continue
@@ -227,6 +248,41 @@ def save():
                 annot.set_colors(stroke=parse_color(o.get("stroke", "#ffff00")))
                 annot.set_opacity(0.5) 
                 annot.set_border(width=o.get("strokeWidth", 1) * o.get("scaleX", 1))
+                annot.update()
+
+            # 螢光筆
+            elif o.get("data_type") == "highlight":
+                left = float(o.get("left", 0))
+                top = float(o.get("top", 0))
+                width = float(o.get("width", 0))
+                height = float(o.get("height", 0))
+
+                if width <= 0 or height <= 0:
+                    continue
+
+                rect = fitz.Rect(left,top,left + width,top + height)
+                rect = rect & page.rect
+
+                if rect.is_empty:
+                    continue
+
+                annot = page.add_highlight_annot(rect)
+                fill_color = parse_color(o.get("fill", "#ffff00"))
+                annot.set_colors(stroke=fill_color)
+                annot.set_opacity(0.5)
+                annot.update()    
+
+            # 底線
+            elif o.get("data_type") == "underline":              
+                start_x = float(o.get("left", 0))
+                end_x = start_x + float(o.get("width", 0))
+                y_pos = float(o.get("top", 0)) + (float(o.get("height", 0)) / 2)
+                p1 = fitz.Point(start_x, y_pos)
+                p2 = fitz.Point(end_x, y_pos)
+                annot = page.add_line_annot(p1, p2)
+                stroke_color = parse_color(o.get("fill", "#000000"))
+                annot.set_colors(stroke=stroke_color)
+                annot.set_border(width=float(o.get("height", 2)))
                 annot.update()
 
     out_buffer = io.BytesIO()
@@ -461,7 +517,7 @@ def doc_mapping():
     if execute_query(sql, params):
         flash(f"{status_msg}！", flash_category)
     else:
-        flash("比對已執行，但在寫入資料庫時發生錯誤。", "error")
+        flash("發生錯誤。", "error")
     return redirect(url_for('mapping_page')) 
 
 @app.route("/mapping/action", methods=["POST"])
