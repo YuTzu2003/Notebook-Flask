@@ -7,16 +7,6 @@ $('#MappingForm').on('submit', function () {
     }
 });
 
-const flashMessages = JSON.parse('{{ get_flashed_messages(with_categories=true)|tojson|safe }}');
-flashMessages.forEach(([category, message]) => {
-    Swal.fire({
-        icon: category === 'success' ? 'success' : 'error',
-        title: message,
-        showConfirmButton: false,
-        timer: 2000
-    });
-});
-
 function togglePublish(recordId, checkbox) {
     const form = document.createElement("form");
     form.method = "POST";

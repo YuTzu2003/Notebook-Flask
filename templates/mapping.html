@@ -218,5 +218,17 @@
     <script src="https://cdn.jsdelivr.net/npm/jquery-easy-loading@1.3.0/dist/jquery.loading.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="/static/js/mapping.js"></script>
+
+    <script>
+        const flashMessages = JSON.parse('{{ get_flashed_messages(with_categories=true)|tojson|safe }}');
+        flashMessages.forEach(([category, message]) => {
+            Swal.fire({
+                icon: category === 'success' ? 'success' : 'error',
+                title: message,
+                showConfirmButton: false,
+                timer: 1500
+            });
+        });
+    </script>
 </body>
 </html>

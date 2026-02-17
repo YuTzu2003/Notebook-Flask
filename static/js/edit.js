@@ -10,6 +10,7 @@ fabric.Object.prototype.set({
     borderDashArray: [3, 3], 
 });
 
+
 let pdfDoc = null, pdfDataInfo = null;
 let pageNum = 1, scale = 1.0; 
 let isStickyMode = false, currentNoteObj = null, tempNoteImage = null;
@@ -442,18 +443,22 @@ function toggleBold() {
 }
 
 function saveCurrent() {
+
     const objects = canvas.getObjects().filter(o => !o.isBackground);
     if (!pdfDataInfo.mods) pdfDataInfo.mods = {};
-    pdfDataInfo.mods[pageNum - 1] = objects.map(o => {
-        let data = o.toObject([
-            'selectable', 'data_type', 'noteText', 'noteImage', 
-            'fill', 'stroke', 'strokeWidth', 'opacity', 'scaleX', 'scaleY', 
-            'text', 'fontSize', 'src', 'path', 'pathOffset', 'left', 'top', 
-            'width', 'height', 'backgroundColor', 'fontFamily', 'fontWeight', 
-            'rx', 'ry', 'globalCompositeOperation', 'selectedText'
-        ]);
-        
-        if (o.type === 'path') {
+    const pageKey = pageNum - 1;
+
+    if (objects.length > 0) {
+        pdfDataInfo.mods[pageKey] = objects.map(o => {
+            let data = o.toObject([
+                'selectable', 'data_type', 'noteText', 'noteImage', 
+                'fill', 'stroke', 'strokeWidth', 'opacity', 'scaleX', 'scaleY', 
+                'text', 'fontSize', 'src', 'path', 'pathOffset', 'left', 'top', 
+                'width', 'height', 'backgroundColor', 'fontFamily', 'fontWeight', 
+                'rx', 'ry', 'globalCompositeOperation', 'selectedText'
+            ]);
+            
+            if (o.type === 'path') {
                 const matrix = o.calcTransformMatrix();
                 data.abs_points = o.path.filter(p => p[0] === 'M' || p[0] === 'L').map(p => { 
                     return [
@@ -461,9 +466,20 @@ function saveCurrent() {
                         fabric.util.transformPoint({ x: p[1] - o.pathOffset.x, y: p[2] - o.pathOffset.y }, matrix).y
                     ]; 
                 });
+            }
+            return data;
+        });
+    } else {
+        delete pdfDataInfo.mods[pageKey];
+    }
+
+    Object.keys(pdfDataInfo.mods).forEach(key => {
+        const pageData = pdfDataInfo.mods[key];
+        if (!pageData || (Array.isArray(pageData) && pageData.length === 0)) {
+            delete pdfDataInfo.mods[key]; 
         }
-        return data;
     });
+ 
     localStorage.setItem("currentPdfSession", JSON.stringify(pdfDataInfo));
 }
 
@@ -516,27 +532,72 @@ async function download_save(btn, isDownload) {
             if (isDownload) { 
                 const blob = await r.blob(), url = window.URL.createObjectURL(blob), a = document.createElement('a'); 
                 a.href = url; a.download = pdfDataInfo.original_name.replace(".pdf","") + "_note.pdf"; a.click(); 
-            } else alert("儲存成功");
+            } 
+            else {
+                Swal.fire({
+                    icon: 'success',
+                    title: '儲存成功',
+                    showConfirmButton: false, 
+                    timer: 1500 
+                });
+            }
         }
-    } catch(e) { alert("出錯了"); } finally { btn.innerHTML = isDownload ? '下載' : '儲存'; btn.disabled = false; }
+    } 
+    catch(e) { 
+         Swal.fire({
+            icon: 'error',
+            title: '儲存失敗',
+            showConfirmButton: false, 
+            timer: 1500 
+        });
+    } 
+    finally { 
+        btn.innerHTML = isDownload ? '下載' : '儲存'; btn.disabled = false; 
+    }
 }
 
 function save(btn) { download_save(btn, false); }
 function download(btn) { download_save(btn, true); }
 
-async function analyzeStructure() {
-    try {
-        const r = await fetch("/analyze_toc", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pdf_name: pdfDataInfo.pdf_name, toc_pages: document.getElementById("tocRange").value, offset: document.getElementById("pageOffset").value }) });
-        const res = await r.json();
-        const list = document.getElementById("resultList"); list.innerHTML = "";
+async function analyzeStructure(btn) {
+    const list = document.getElementById("resultList");
+    
+    list.innerHTML = `
+        <div class="d-flex flex-column align-items-center justify-content-center p-4">
+            <div class="mt-2 text-muted small">目錄解析中...</div>
+        </div>
+    `;
+
+    if (btn) btn.disabled = true;
+    const r = await fetch("/analyze_toc", { 
+        method: "POST", 
+        headers: { "Content-Type": "application/json" }, 
+        body: JSON.stringify({ 
+            pdf_name: pdfDataInfo.pdf_name, 
+            toc_pages: document.getElementById("tocRange").value, 
+            offset: document.getElementById("pageOffset").value 
+        }) 
+    });
+    
+    const res = await r.json();
+    list.innerHTML = "";
+
+    if (res.data && res.data.length > 0) {
         res.data.forEach(item => {
-            const a = document.createElement("a"); a.className = "list-group-item list-group-item-action d-flex justify-content-between align-items-center";
-            a.dataset.page = item.jump_page; a.onclick = () => renderPage(parseInt(a.dataset.page));
+            const a = document.createElement("a"); 
+            a.className = "list-group-item list-group-item-action d-flex justify-content-between align-items-center";
+            a.dataset.page = item.jump_page; 
+            a.onclick = () => renderPage(parseInt(a.dataset.page));
             a.innerHTML = `<span class="text-truncate">${item.title}</span><span class="badge bg-secondary">P.${item.page}</span>`;
             list.appendChild(a);
         });
-    } catch(e) { alert("目錄解析錯誤"); }
+    } else {
+        list.innerHTML = '<div class="p-4 text-center text-muted small bg-light">未偵測到目錄</div>';
+    }
+
+    if (btn) btn.disabled = false;
 }
+
 function updateActiveToc(pageIdx) {
     document.querySelectorAll('.list-group-item').forEach(el => el.classList.remove('active'));
     const items = Array.from(document.querySelectorAll('.list-group-item'));
