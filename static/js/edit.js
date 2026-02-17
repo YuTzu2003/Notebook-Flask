@@ -1,5 +1,15 @@
 const canvas = new fabric.Canvas("c", { preserveObjectStacking: true });
 
+fabric.Object.prototype.set({
+    borderColor: '#999999',      // 外圍大框顏色
+    cornerStrokeColor: '#999999',// 控制方塊邊框顏色
+    cornerSize: 3,               // 方塊大小
+    padding: 4,                  // 框框跟物件距離
+    transparentCorners: false,
+    cornerColor: '#ffffff', 
+    borderDashArray: [3, 3], 
+});
+
 let pdfDoc = null, pdfDataInfo = null;
 let pageNum = 1, scale = 1.0; 
 let isStickyMode = false, currentNoteObj = null, tempNoteImage = null;
@@ -96,8 +106,7 @@ document.addEventListener('mouseup', function() {
                 highlightSelection(selection);
             } else if (interactionMode === 'underline') {
                 underlineSelection(selection);
-            }
-        }, 10);
+            }}, 10);
     }
 });
 
@@ -216,7 +225,7 @@ function updateModeUI() {
         if(btn) {
             btn.classList.remove("active", "btn-secondary", "btn-primary", "btn-warning", "btn-dark");
             
-            if(id === 'selectObjBtn') btn.classList.add("btn-outline-info");
+            if(id === 'selectObjBtn') btn.classList.add("btn-outline-secondary");
             else if(id === 'highlightBtn') btn.classList.add("btn-outline-primary");
             else if(id === 'underlineBtn') btn.classList.add("btn-outline-dark");
             else btn.classList.add("btn-outline-secondary");
@@ -310,7 +319,7 @@ function addText() {
     interactionMode = 'object'; 
     updateModeUI();
     const t = new fabric.IText("文字", { 
-        left: 100, top: 100, fontSize: 20, 
+        left: 100, top: 100, fontSize: 16, 
         fill: document.getElementById("mainColor").value,
         fontFamily: document.getElementById("fontFamily").value,
         fontWeight: document.getElementById("boldBtn").classList.contains("active") ? 'bold' : 'normal'
@@ -323,9 +332,9 @@ function addText() {
 canvas.on('mouse:down', function(opt) {
     if (interactionMode === 'sticky' && !opt.target) {
         const p = canvas.getPointer(opt.e);
-        const sticky = new fabric.Textbox("新便籤", {
+        const sticky = new fabric.Textbox("便籤", {
             left: p.x, top: p.y, width: 80, fontSize: 11, fontFamily: 'Noto Sans TC',
-            backgroundColor: '#ffda6a', padding: 6, data_type: 'sticky', 
+            backgroundColor: '#f7e099', padding: 6, data_type: 'sticky', 
             noteText: "", noteImage: null, hasControls: true, editable: false, 
             rx: 6, ry: 6, textAlign: 'center'
         });
@@ -353,13 +362,13 @@ canvas.on('mouse:dblclick', function(opt) {
 });
 
 function getPreviewLabel(str, hasImage) {
-    let base = str ? (str.length > 8 ? str.substring(0, 8) + "..." : str) : "新便籤";
-    return hasImage ? "📷 " + base : "🏷️ " + base;
+    let base = str ? (str.length > 8 ? str.substring(0, 8) + "..." : str) : "便籤";
+    return hasImage ? "📷" + base : "🏷️" + base;
 }
 canvas.on('mouse:over', function(e) {
     const obj = e.target;
     if (obj && obj.data_type === 'sticky') {
-        previewTxt.innerText = obj.noteText || "無詳細內容";
+        previewTxt.innerText = obj.noteText || "無內容";
         if (obj.noteImage) {
             previewImg.src = obj.noteImage;
             previewImg.style.display = 'block';
@@ -400,7 +409,12 @@ function updateStyle(type) {
                 else if (obj.type === 'path') obj.set('stroke', `rgba(${parseInt(color.slice(1,3), 16)},${parseInt(color.slice(3,5), 16)},${parseInt(color.slice(5,7), 16)},0.6)`);
             }
             if (type === 'size' && obj.data_type !== 'highlight' && obj.data_type !== 'underline') {
-                if (obj.type === 'path') obj.set('strokeWidth', size);
+                if (obj.type === 'path') {
+                    obj.set('strokeWidth', size);
+                } 
+                else if (obj.type === 'i-text' || obj.type === 'text') {
+                    obj.set('fontSize', size); 
+                }
             }
             if (type === 'font') {
                 if (obj.type === 'i-text' || obj.type === 'text') obj.set('fontFamily', font);
