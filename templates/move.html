@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>筆記轉移測試 - PDF做筆記</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf_viewer.min.css">
+    <link rel="icon" href="/static/logo.ico" type="image/x-icon"/>
+    
+    <style>
+        body { 
+            font-family: 'Noto Sans TC', sans-serif; 
+            height: 100vh; 
+            overflow: hidden; 
+            background-color: #f8f9fa; 
+        }
+
+        .sidebar { 
+            background-color: #ffffff; 
+            border-right: 1px solid #dee2e6; 
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; 
+            z-index: 10; 
+        }
+
+        .sidebar-header { 
+            padding: 1rem; 
+            border-bottom: 1px solid #dee2e6; 
+            background: #ffffff; 
+        }
+
+        .sidebar-content { 
+            padding: 1rem; 
+            flex: 1; 
+            overflow-y: auto; 
+            height: calc(100vh - 80px); 
+        }
+
+        .main-wrapper { 
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; 
+            background-color: #f8f9fa; 
+            position: relative; 
+        }
+
+        .toolbar-top { 
+            background-color: #ffffff; 
+            border-bottom: 1px solid #dee2e6; 
+            padding: 0.5rem 1rem; 
+            box-shadow: 0 1px 2px rgba(0,0,0,0.02); 
+            height: 50px; 
+            z-index: 5; 
+        }      
+
+        #wrap { 
+            flex: 1; 
+            background-color: #e3e3e7; 
+            overflow: auto; 
+            display: flex; 
+            justify-content: center; 
+            align-items: flex-start; 
+            padding: 30px; 
+            position: relative; 
+        }
+
+        .page-stack { 
+            position: relative; 
+            background: white; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3); 
+            overflow: hidden; 
+        }
+        .pdf-render-canvas { 
+            display: block; 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            z-index: 1; 
+        }
+
+        .canvas-container { 
+            position: absolute !important; 
+            top: 0; 
+            left: 0; 
+            z-index: 2; 
+            mix-blend-mode: multiply; 
+            margin: 0 auto; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
+        }
+
+        .textLayer { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            z-index: 3; 
+            opacity: 1; 
+            line-height: 1.0; 
+        }
+
+        .textLayer span { 
+            color: transparent; 
+            cursor: text; 
+        }
+
+        .textLayer ::selection { 
+            background: rgba(0, 153, 255, 0.2);
+            color: transparent; 
+        }
+        
+        body.mode-text-select .textLayer { pointer-events: auto; }
+        body.mode-text-select .canvas-container { pointer-events: none; }
+        body.mode-object-edit .canvas-container { pointer-events: auto; }
+        body.mode-object-edit .textLayer { pointer-events: none; }
+
+        #hoverPreview { 
+            position: fixed; 
+            display: none; 
+            background: white; 
+            border: 1px solid #ddd; 
+            border-radius: 8px; 
+            padding: 12px; 
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15); 
+            z-index: 9999; 
+            max-width: 280px; 
+            pointer-events: none; 
+        }
+
+        #hoverPreview img { 
+            max-width: 100%; 
+            height: auto; 
+            margin-top: 8px; 
+            border-radius: 4px; 
+            border: 1px solid #eee; 
+        }
+
+        #hoverPreview .preview-text { 
+            font-size: 14px; 
+            color: #333; 
+            word-wrap: break-word; 
+            white-space: pre-wrap; 
+        }
+    </style>
+</head>
+<body class="mode-text-select"> 
+    <div class="container-fluid p-0">
+        <div class="row g-0 h-100">
+            <div class="col-md-3 col-lg-2 sidebar">
+                <div class="sidebar-header">
+                    <a class="navbar-brand d-flex align-items-center gap-2" href="/">
+                        <h5 class="m-0 fw-bold text-dark">
+                            <img src="/static/logo.png"alt="logo" style="height: 40px;">PDF做筆記
+                        </h5>
+                    </a>
+                </div>
+                <div class="sidebar-content">
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">PDF</label>
+                        <input type="file" id="pdfInput" class="form-control form-control-sm" accept="application/pdf">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">JSON</label>
+                        <input type="file" id="jsonInput" class="form-control form-control-sm" accept="application/json">
+                    </div>
+
+                    <button class="btn btn-primary btn-sm w-100 mb-3" onclick="loadFiles()">載入還原</button>
+                    <hr class="my-3">
+                    <button class="btn btn-outline-dark btn-sm w-100 mb-2 active" id="btnModeText" onclick="setMode('text')">文字選取</button>
+                    <button class="btn btn-outline-danger btn-sm w-100" id="btnModeNote" onclick="setMode('note')">編輯移動</button>
+                </div>
+            </div>
+
+            <div class="col-md-9 col-lg-10 main-wrapper">
+                <div class="toolbar-top d-flex align-items-center position-relative px-3">
+                    <div>
+                        <span id="fileNameDisplay" class="fw-bold text-dark small">未載入檔案</span>
+                    </div>
+                    <div class="vr mx-2"></div>
+                    <div class="position-absolute top-50 start-50 translate-middle d-flex align-items-center bg-light rounded px-2 border">
+                        <button class="btn btn-sm btn-link text-dark p-0 me-2"
+                                onclick="changePage(-1)">
+                            <i class="bi bi-chevron-left"></i>
+                        </button>
+
+                        <span id="pageInfo" class="text-dark small mx-2 fw-bold" style="min-width: 60px; text-align: center;">0 / 0</span>
+                        <button class="btn btn-sm btn-link text-dark p-0 ms-2 me-2" onclick="changePage(1)"><i class="bi bi-chevron-right"></i></button>
+
+                        <div class="vr mx-2"></div>
+
+                        <div class="input-group input-group-sm" style="width: 110px;">
+                            <input type="number" id="jumpPageInput" class="form-control text-center" placeholder="#" min="1">
+                            <button class="btn btn-outline-secondary" onclick="jumpToPage()">Go</button>
+                        </div>
+                    </div>
+
+                    <div class="ms-auto d-flex align-items-center">
+                        <button class="btn btn-sm btn-light border" onclick="adjustZoom(-0.1)"><i class="bi bi-zoom-out"></i></button>
+                        <span id="zoomLevel" class="small fw-bold text-muted mx-2">100%</span>
+                        <button class="btn btn-sm btn-light border" onclick="adjustZoom(0.1)"><i class="bi bi-zoom-in"></i></button>
+                    </div>
+                </div>
+                <div id="wrap">
+                    <div id="pageStack" class="page-stack">
+                        <canvas id="pdfCanvas" class="pdf-render-canvas"></canvas>
+                        <div id="textLayer" class="textLayer"></div>
+                        <canvas id="c"></canvas> 
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="hoverPreview">
+        <div class="preview-text" id="previewText"></div>
+        <img id="previewImg" src="" style="display:none;">
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+        fabric.Object.prototype.set({
+            borderColor: '#999999',      // 外圍大框顏色
+            cornerStrokeColor: '#999999',// 控制方塊邊框顏色
+            cornerSize: 3,               // 方塊大小
+            padding: 4,                  // 框框跟物件距離
+            transparentCorners: false,
+            cornerColor: '#ffffff', 
+            borderDashArray: [3, 3], 
+        });
+
+        let pdfDoc = null;
+        let pdfDataInfo = { mods: {} };
+        let pageNum = 1;
+        let scale = 1.0;
+        let isDragging = false; 
+        
+        const canvas = new fabric.Canvas("c", { 
+            enableRetinaScaling: true,
+            preserveObjectStacking: true 
+        });
+
+        const hoverBox = document.getElementById('hoverPreview');
+        const previewTxt = document.getElementById('previewText');
+        const previewImg = document.getElementById('previewImg');
+        const jumpInput = document.getElementById('jumpPageInput');
+
+        jumpInput.addEventListener("keypress", function(event) {
+            if (event.key === "Enter") jumpToPage();
+        });
+
+        async function loadFiles() {
+            const pdfFile = document.getElementById('pdfInput').files[0];
+            const jsonFile = document.getElementById('jsonInput').files[0];
+
+            if (!pdfFile || !jsonFile) { alert("請先選擇 PDF 和 JSON 檔案"); return; }
+
+            try {
+                const jsonText = await readFileAsText(jsonFile);
+                const loadedJson = JSON.parse(jsonText);
+                pdfDataInfo.mods = loadedJson.mods || loadedJson; 
+
+                const pdfArrayBuffer = await readFileAsBuffer(pdfFile);
+                const loadingTask = pdfjsLib.getDocument(pdfArrayBuffer);
+                pdfDoc = await loadingTask.promise;
+
+                document.getElementById("fileNameDisplay").innerText = pdfFile.name;
+                pageNum = 1;
+                renderPage(pageNum);
+
+            } catch (err) {
+                console.error(err);
+                alert("載入錯誤：" + err.message);
+            }
+        }
+
+        function saveCurrentPageState() {
+            if (!pdfDoc) return;
+            const pageKey = (pageNum - 1).toString();
+            const objects = canvas.getObjects();
+            
+            if (objects.length > 0) {
+                const json = objects.map(o => {
+                    return o.toObject(['selectable', 'data_type', 'noteText', 'noteImage', 'id']); 
+                });
+                pdfDataInfo.mods[pageKey] = json;
+            } else {
+                delete pdfDataInfo.mods[pageKey];
+            }
+        }
+
+        async function renderPage(num) {
+            if (!pdfDoc || num < 1 || num > pdfDoc.numPages) return;
+            saveCurrentPageState();
+
+            pageNum = num;
+            const dpr = window.devicePixelRatio || 1;
+            const page = await pdfDoc.getPage(num);
+            const viewport = page.getViewport({ scale: scale });
+            const stack = document.getElementById("pageStack");
+            stack.style.width = `${viewport.width}px`;
+            stack.style.height = `${viewport.height}px`;
+
+            const pdfCanvas = document.getElementById("pdfCanvas");
+            const pdfCtx = pdfCanvas.getContext('2d');
+            pdfCanvas.width = Math.floor(viewport.width * dpr);
+            pdfCanvas.height = Math.floor(viewport.height * dpr);
+            pdfCanvas.style.width = `${Math.floor(viewport.width)}px`;
+            pdfCanvas.style.height = `${Math.floor(viewport.height)}px`;
+
+            const renderContext = {
+                canvasContext: pdfCtx,
+                viewport: viewport,
+                transform: [dpr, 0, 0, dpr, 0, 0]
+            };
+            await page.render(renderContext).promise;
+
+            // Text Layer
+            const textLayerDiv = document.getElementById("textLayer");
+            textLayerDiv.innerHTML = "";
+            textLayerDiv.style.width = `${viewport.width}px`;
+            textLayerDiv.style.height = `${viewport.height}px`;
+            const textContent = await page.getTextContent();
+            pdfjsLib.renderTextLayer({
+                textContent: textContent,
+                container: textLayerDiv,
+                viewport: viewport,
+                textDivs: []
+            });
+
+            // 設定 Fabric Canvas
+            canvas.setWidth(viewport.width);
+            canvas.setHeight(viewport.height);
+            canvas.setZoom(scale); 
+            canvas.clear();
+
+            // 還原筆記
+            const pageKey = (pageNum - 1).toString();
+            const pageMods = pdfDataInfo.mods[pageKey];
+
+            if (pageMods) {
+                fabric.util.enlivenObjects(pageMods, (objs) => {
+                    objs.forEach(o => {
+                        o.set({ 
+                            selectable: true,  // 允許被選取、移動
+                            evented: true,     // 允許觸發 hover 事件
+                            hasControls: true, // 顯示控制項 (縮放旋轉)
+                            hasBorders: true,  // 顯示邊框
+                            lockScalingX: false,
+                            lockScalingY: false
+                        });
+
+                        if (o.data_type === 'sticky') {
+                            o.set({ 
+                                hasControls: false,
+                                lockScalingX: true, 
+                                lockScalingY: true,
+                                lockRotation: true, 
+                                borderColor: 'transparent' 
+                            });
+                        }
+                        
+                        canvas.add(o);
+                    });
+                    canvas.renderAll();
+                });
+            }
+
+            document.getElementById("pageInfo").innerText = `${pageNum} / ${pdfDoc.numPages}`;
+            document.getElementById("zoomLevel").innerText = Math.round(scale * 100) + "%";
+            document.getElementById("jumpPageInput").value = pageNum; 
+        }
+
+        function changePage(d) { 
+            const newPage = pageNum + d;
+            if(newPage >= 1 && newPage <= pdfDoc.numPages) renderPage(newPage);
+        }
+
+        function jumpToPage() {
+            const p = parseInt(jumpInput.value);
+            if (p >= 1 && p <= pdfDoc.numPages) {
+                renderPage(p);
+            } else {
+                alert(`請輸入 1 到 ${pdfDoc.numPages} 之間的頁碼`);
+            }
+        }
+
+        function adjustZoom(d) { scale = Math.max(0.5, scale + d); renderPage(pageNum); }
+
+        function setMode(mode) {
+            const body = document.body;
+            const btnText = document.getElementById('btnModeText');
+            const btnNote = document.getElementById('btnModeNote');
+
+            body.classList.remove('mode-text-select', 'mode-object-edit');
+            btnText.classList.remove('active');
+            btnNote.classList.remove('active');
+
+            if (mode === 'text') {
+                body.classList.add('mode-text-select');
+                btnText.classList.add('active');
+                canvas.discardActiveObject(); 
+                canvas.requestRenderAll();
+            } else {
+                body.classList.add('mode-object-edit');
+                btnNote.classList.add('active');
+            }
+        }
+
+        function readFileAsText(file) {
+            return new Promise((res, rej) => {
+                const r = new FileReader();
+                r.onload = e => res(e.target.result);
+                r.onerror = rej;
+                r.readAsText(file);
+            });
+        }
+        function readFileAsBuffer(file) {
+            return new Promise((res, rej) => {
+                const r = new FileReader();
+                r.onload = e => res(e.target.result);
+                r.onerror = rej;
+                r.readAsArrayBuffer(file);
+            });
+        }
+
+        canvas.on('object:moving', function(e) {
+            isDragging = true;
+            hoverBox.style.display = 'none';
+        });
+
+        canvas.on('mouse:up', function(e) {
+            isDragging = false;
+        });
+
+        canvas.on('mouse:over', function(e) {
+            if (isDragging) return; 
+
+            if (e.target && e.target.data_type === 'sticky') {
+                previewTxt.innerText = e.target.noteText || "無內容";
+                if (e.target.noteImage) {
+                    previewImg.src = e.target.noteImage;
+                    previewImg.style.display = 'block';
+                } else {
+                    previewImg.style.display = 'none';
+                }
+                hoverBox.style.display = 'block';
+            }
+        });
+
+        canvas.on('mouse:move', function(e) {
+            if (hoverBox.style.display === 'block') {
+                hoverBox.style.left = (e.e.clientX + 15) + 'px';
+                hoverBox.style.top = (e.e.clientY + 15) + 'px';
+            }
+        });
+
+        canvas.on('mouse:out', function() { hoverBox.style.display = 'none'; });
+    </script>
+</body>
+</html>

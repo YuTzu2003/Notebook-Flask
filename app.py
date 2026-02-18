@@ -270,6 +270,12 @@ def mapping_action():
         sql = "SELECT RecordID,ResultName FROM MappingRecord WHERE RecordID = ?"
         result = fetch_all(sql, (record_id,))
         return send_from_directory(Mapping_Folder, result[0]['ResultName'], as_attachment=True, mimetype="text/csv")
-        
+
+
+@app.route("/move")
+@login_required
+def move_page():
+    return render_template("move.html")
+      
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
