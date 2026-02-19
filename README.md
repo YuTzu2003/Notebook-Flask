@@ -9,4 +9,5 @@
 Restore Hospital.bak
 cd notebook-flask
 uv venv
+.venv\Scripts\activate
 uv sync
