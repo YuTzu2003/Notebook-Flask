@@ -54,14 +54,14 @@
                                     <div class="text-muted small">
                                         <i class="bi bi-calendar3 me-1"></i> 
                                         {% if doc.UploadTime %}
-                                            {{ doc.UploadTime.strftime('%Y/%m/%d') }}
+                                            {{ doc.UploadTime.strftime('%Y/%m/%d %H:%M') }}
                                         {% else %}
-                                            --/--/--
+                                            --/--/--/--/--
                                         {% endif %}
                                     </div>
                                 </div>
                                 <div class="text-secondary mt-2" style="font-size: 0.7rem; letter-spacing: 0.5px;">
-                                    ID: {{ doc.DocID[:8] }}...
+                                    ID: {{ doc.DocID[:12] }}...
                                 </div>
                                 <div class="d-flex gap-2 mt-3">
                                     <button class="btn btn-outline-primary btn-sm flex-fill" onclick="doc_tool('edit', '{{ doc.DocID }}', event)">

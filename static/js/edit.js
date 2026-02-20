@@ -10,7 +10,6 @@ fabric.Object.prototype.set({
     borderDashArray: [3, 3], 
 });
 
-
 let pdfDoc = null, pdfDataInfo = null;
 let pageNum = 1, scale = 1.0; 
 let isStickyMode = false, currentNoteObj = null, tempNoteImage = null;
@@ -21,6 +20,9 @@ let interactionMode = 'text'; // 'text', 'highlight', 'underline', 'draw', 'obje
 const hoverBox = document.getElementById('hoverPreview');
 const previewTxt = document.getElementById('previewText');
 const previewImg = document.getElementById('previewImg');
+
+let isPageTurning = false;
+let draggingObj = null;
 
 window.onload = async function() {
     const storedData = localStorage.getItem("currentPdfSession");
@@ -33,6 +35,7 @@ window.onload = async function() {
     pdfDoc = await loadingTask.promise;
     pdfDataInfo.total_pages = pdfDoc.numPages;
     renderPage(pageNum);
+    initScrollToTurnPage();
 };
 
 async function renderPage(num) {
@@ -78,6 +81,15 @@ async function renderPage(num) {
     canvas.setHeight(viewportDisplay.height);
     canvas.setZoom(scale); 
     canvas.clear(); 
+    const appendDraggingObj = () => {
+        if (draggingObj) {
+            canvas.add(draggingObj);
+            canvas.setActiveObject(draggingObj);
+            draggingObj = null;
+            saveCurrent();
+        }
+        canvas.renderAll();
+    };
 
     if (pdfDataInfo.mods && pdfDataInfo.mods[num-1]) {
         fabric.util.enlivenObjects(pdfDataInfo.mods[num-1], objs => {
@@ -88,8 +100,10 @@ async function renderPage(num) {
                 }
                 canvas.add(o);
             });
-            canvas.renderAll();
+            appendDraggingObj(); // 在原有物件載入後，加上拖曳過來的物件
         });
+    } else {
+        appendDraggingObj(); // 如果這頁沒有舊筆記，直接加上拖曳過來的物件
     }
 
     document.getElementById("pageInfo").innerText = `${pageNum} / ${pdfDoc.numPages}`;
@@ -98,7 +112,78 @@ async function renderPage(num) {
     updateModeUI();
 }
 
-// --- (觸發螢光筆與底線) ---
+// ======= 畫布內物件拖曳跨頁的邏輯 =======
+canvas.on('object:moving', function(e) {
+    if (isPageTurning) return;
+    
+    const obj = e.target;
+    // 取得游標相對於畫布的實體位置
+    const pointer = canvas.getPointer(e.e);
+    const buffer = -10; // 觸發換頁的邊緣緩衝值
+    const logicalHeight = canvas.getHeight() / scale;
+
+    if (pointer.y < buffer && pageNum > 1) {
+        // 拖曳到上邊緣 -> 回到上一頁
+        isPageTurning = true;
+        canvas.remove(obj); // 1. 先從當前頁移除
+        saveCurrent();      // 2. 儲存當前頁 (此時已不含該物件)
+        
+        // 3. 設定新頁面的放置位置 (底部)
+        obj.top = logicalHeight - (obj.height * obj.scaleY) - 50; 
+        draggingObj = obj;
+        
+        changePage(-1);     // 4. 觸發換頁
+        setTimeout(() => isPageTurning = false, 800); // 防抖動冷卻
+        
+    } else if (pointer.y > logicalHeight - buffer && pageNum < pdfDoc.numPages) {
+        // 拖曳到下邊緣 -> 前往下一頁
+        isPageTurning = true;
+        canvas.remove(obj);
+        saveCurrent();
+        
+        // 設定新頁面的放置位置 (頂部)
+        obj.top = 50; 
+        draggingObj = obj;
+        
+        changePage(1);
+        setTimeout(() => isPageTurning = false, 800);
+    }
+});
+
+// ======= 新增：滾輪滑動偵測跨頁邏輯 =======
+function initScrollToTurnPage() {
+    const wrapElement = document.getElementById("wrap");
+    let wheelTimeout;
+
+    wrapElement.addEventListener("wheel", function(e) {
+        if (isPageTurning) return;
+        
+        // 判斷是否滾動到最底或最頂 (給予 2px 誤差寬容值)
+        const isAtBottom = wrapElement.scrollHeight - Math.ceil(wrapElement.scrollTop) <= wrapElement.clientHeight + 2;
+        const isAtTop = wrapElement.scrollTop <= 2;
+
+        if (e.deltaY > 0 && isAtBottom) { 
+            // 往下滾動且到底部
+            if (pageNum < pdfDoc.numPages) {
+                e.preventDefault(); // 防止滾動回彈
+                isPageTurning = true;
+                changePage(1);
+                clearTimeout(wheelTimeout);
+                wheelTimeout = setTimeout(() => isPageTurning = false, 800);
+            }
+        } else if (e.deltaY < 0 && isAtTop) { 
+            if (pageNum > 1) {
+                e.preventDefault();
+                isPageTurning = true;
+                changePage(-1);
+                clearTimeout(wheelTimeout);
+                wheelTimeout = setTimeout(() => isPageTurning = false, 800);
+            }
+        }
+    }, { passive: false });
+}
+
+// --- (螢光筆與底線) ---
 document.addEventListener('mouseup', function() {
     const selection = window.getSelection();
     if (selection && selection.toString().trim() !== "") {
@@ -163,12 +248,12 @@ function underlineSelection(selection) {
         const top = (r.top - canvasRect.top) / scale;
         const width = r.width / scale;
         const height = r.height / scale;
-        const lineHeight = 1; // 底線粗細
-        const lineOffset = 0.2; // 距離文字底部
-
+        
+        const lineHeight = 1.5;
+        const lineOffset = height * 0.18; 
         const line = new fabric.Rect({
             left: left,
-            top: top + height - lineOffset,
+            top: top + height - lineOffset, 
             width: width,
             height: lineHeight,
             fill: color,
@@ -443,7 +528,6 @@ function toggleBold() {
 }
 
 function saveCurrent() {
-
     const objects = canvas.getObjects().filter(o => !o.isBackground);
     if (!pdfDataInfo.mods) pdfDataInfo.mods = {};
     const pageKey = pageNum - 1;
@@ -559,43 +643,48 @@ async function download_save(btn, isDownload) {
 function save(btn) { download_save(btn, false); }
 function download(btn) { download_save(btn, true); }
 
-async function analyzeStructure(btn) {
+async function analyzeStructure(form) {
     const list = document.getElementById("resultList");
+    const btn = form.querySelector('button[type="submit"]') || form.querySelector('button');
     
-    list.innerHTML = `
-        <div class="d-flex flex-column align-items-center justify-content-center p-4">
-            <div class="mt-2 text-muted small">目錄解析中...</div>
-        </div>
-    `;
-
     if (btn) btn.disabled = true;
-    const r = await fetch("/analyze_toc", { 
-        method: "POST", 
-        headers: { "Content-Type": "application/json" }, 
-        body: JSON.stringify({ 
-            pdf_name: pdfDataInfo.pdf_name, 
-            toc_pages: document.getElementById("tocRange").value, 
-            offset: document.getElementById("pageOffset").value 
-        }) 
-    });
-    
-    const res = await r.json();
-    list.innerHTML = "";
+    list.innerHTML = '<div class="p-4 text-center text-muted small bg-light">目錄解析中...</div>';
 
-    if (res.data && res.data.length > 0) {
-        res.data.forEach(item => {
-            const a = document.createElement("a"); 
-            a.className = "list-group-item list-group-item-action d-flex justify-content-between align-items-center";
-            a.dataset.page = item.jump_page; 
-            a.onclick = () => renderPage(parseInt(a.dataset.page));
-            a.innerHTML = `<span class="text-truncate">${item.title}</span><span class="badge bg-secondary">P.${item.page}</span>`;
-            list.appendChild(a);
+    try {
+        const r = await fetch("/analyze_toc", { 
+            method: "POST", 
+            headers: { "Content-Type": "application/json" }, 
+            body: JSON.stringify({ 
+                pdf_name: pdfDataInfo.pdf_name, 
+                toc_pages: document.getElementById("tocRange").value 
+            }) 
         });
-    } else {
-        list.innerHTML = '<div class="p-4 text-center text-muted small bg-light">未偵測到目錄</div>';
-    }
+        
+        const res = await r.json();
+        
+        if (!r.ok || res.error) {
+            throw new Error(res.error || `${r.status}`);
+        }
+        
+        if (res.data && res.data.length > 0) {
+            list.innerHTML = res.data.map(item => `
+                <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" 
+                   style="cursor:pointer;" 
+                   onclick="renderPage(${item.jump_page})">
+                   <span class="text-truncate">${item.title}</span>
+                   <span class="badge bg-secondary">P.${item.page}</span>
+                </a>`).join('');
+        } else {
+            list.innerHTML = '<div class="p-4 text-center text-muted small bg-light">未偵測到目錄格式的文字</div>';
+        }
 
-    if (btn) btn.disabled = false;
+    } 
+    catch(e) {
+        list.innerHTML = `<div class="p-4 text-center text-danger small bg-light">${e.message || '發生錯誤'}</div>`;
+    } 
+    finally {
+        if (btn) btn.disabled = false;
+    }
 }
 
 function updateActiveToc(pageIdx) {
@@ -654,38 +743,38 @@ document.getElementById("imgInput").onchange = function(e) {
 };
 
 async function addBlankPage() {
-    if (!confirm(`確定要在第 ${currentPage + 1} 頁之後插入空白頁嗎？`)) return;
-    saveCurrent(); isRefreshing = true;
+    if (!confirm(`確定要在第 ${pageNum} 頁之後插入空白頁嗎？`)) return;
+    saveCurrent(); isPageTurning = true; 
     try {
         const r = await fetch("/add_blank_page", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ doc_id: pdfDataInfo.doc_id, insert_after: currentPage, all_modifications: pdfDataInfo.mods })
+            body: JSON.stringify({ doc_id: pdfDataInfo.doc_id, insert_after: pageNum, all_modifications: pdfDataInfo.mods })
         });
         const res = await r.json();
         if (res.success) {
             pdfDataInfo.total_pages = res.new_total_pages; pdfDataInfo.mods = res.mods;
             localStorage.setItem("currentPdfSession", JSON.stringify(pdfDataInfo));
-            renderPage(currentPage + 1);
+            renderPage(pageNum + 1);
             alert("頁面插入成功！");
         }
-    } catch(e) { alert("失敗"); } finally { isRefreshing = false; }
+    } catch(e) { alert("失敗"); } finally { isPageTurning = false; }
 }
 
 async function deleteCurrentPage() {
     if (pdfDataInfo.total_pages <= 1) { alert("無法刪除最後一頁"); return; }
-    if (!confirm(`確定要刪除第 ${currentPage + 1} 頁嗎？`)) return;
-    saveCurrent(); isRefreshing = true;
+    if (!confirm(`確定要刪除第 ${pageNum} 頁嗎？`)) return;
+    saveCurrent(); isPageTurning = true;
     try {
         const r = await fetch("/delete_page", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ doc_id: pdfDataInfo.doc_id, page_idx: currentPage, all_modifications: pdfDataInfo.mods })
+            body: JSON.stringify({ doc_id: pdfDataInfo.doc_id, page_idx: pageNum, all_modifications: pdfDataInfo.mods })
         });
         const res = await r.json();
         if (res.success) {
             pdfDataInfo.total_pages = res.new_total_pages; pdfDataInfo.mods = res.mods;
             localStorage.setItem("currentPdfSession", JSON.stringify(pdfDataInfo));
-            renderPage(currentPage >= pdfDataInfo.total_pages ? pdfDataInfo.total_pages - 1 : currentPage);
+            renderPage(pageNum >= pdfDataInfo.total_pages ? pdfDataInfo.total_pages - 1 : pageNum);
             alert("頁面已刪除！");
         }
-    } catch(e) { alert("失敗"); } finally { isRefreshing = false; }
+    } catch(e) { alert("失敗"); } finally { isPageTurning = false; }
 }

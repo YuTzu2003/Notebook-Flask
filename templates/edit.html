@@ -39,15 +39,14 @@
                     </div>
 
                     <div class="sidebar-panel d-flex flex-column h-100">
-                        <div class="mb-3">
-                            <label class="form-label small text-muted">目錄頁碼範圍</label>
-                            <input type="text" id="tocRange" class="form-control form-control-sm" value="3-5">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label small text-muted">頁碼偏移量</label>
-                            <input type="number" id="pageOffset" class="form-control form-control-sm" value="0">
-                        </div>
-                        <button class="btn btn-success btn-sm w-100 fw-bold mb-3 shadow-sm" onclick="analyzeStructure(this)">書籤製作</button>
+                        <form onsubmit="event.preventDefault(); analyzeStructure(this);">
+                            <div class="mb-3">
+                                <label class="form-label small text-muted">目錄頁碼範圍</label>
+                                <input type="text" id="tocRange" class="form-control form-control-sm" value="3-5">
+                            </div>
+                            <button type="submit" class="btn btn-success btn-sm w-100 fw-bold mb-3 shadow-sm">書籤製作</button>
+                        </form>
+                        
                         <div class="list-group list-group-flush border rounded overflow-auto shadow-sm" id="resultList" style="flex:1; min-height: 200px;">
                             <div class="p-4 text-center text-muted small bg-light">未製作書籤</div>
                         </div>

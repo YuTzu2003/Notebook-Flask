@@ -36,7 +36,7 @@ body {
 /* 卡片 */
 .doc-card {
     background: #fff;
-    border: none;
+    border: 1;
     border-radius: 12px;
     transition: transform 0.25s, box-shadow 0.25s;
     height: 100%;

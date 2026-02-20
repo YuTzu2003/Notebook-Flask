@@ -254,21 +254,28 @@ def save():
     execute_query("UPDATE Documents SET UploadTime = ? WHERE DocID = ? AND User_ID = ?", (datetime.now(), doc_id, session.get("ID")))
     return send_file(out_buffer, mimetype='application/pdf', as_attachment=True, download_name=f"{os.path.splitext(original_name)[0]}_note.pdf")
 
+import os
+import re
+from flask import request, jsonify
+
 @notes_bp.route("/analyze_toc", methods=["POST"])
 def analyze_toc():
     data = request.json
     filename = data.get("pdf_name")
     toc_str = data.get("toc_pages", "")
-    offset = int(data.get("offset", 0))
-    
+
     pdf_path = os.path.join(UPLOAD_Folder, filename)
     toc_pages = parse_page_range(toc_str)
 
     if not toc_pages:
-        return jsonify({"error": "請輸入目錄所在的頁碼範圍"}), 400
+        return jsonify({"error": "請輸入目錄頁碼範圍"}), 400
+
     toc_list = []
+
     with pdfplumber.open(pdf_path) as pdf:
         total_pages = len(pdf.pages)
+
+        raw_toc_entries = []
         for p_num in toc_pages:
             if p_num > total_pages: continue
             
@@ -282,15 +289,36 @@ def analyze_toc():
                     raw_title = match.group(1)
                     page_ref = int(match.group(2))
                     title = re.sub(r'[.．。\s]+$', '', raw_title).strip()
-
+                    
                     if title and not title.isdigit() and len(title) > 1:
-                        toc_list.append({
-                            "title": title, 
-                            "page": page_ref,
-                            "jump_page": page_ref + offset 
-                        })
+                        raw_toc_entries.append({"title": title, "page_ref": page_ref})
 
-    if not toc_list:
-            return jsonify({"error": "在指定頁面找不到目錄格式的文字"}), 400
+        if not raw_toc_entries:
+            return jsonify({"error": "在頁面找不到目錄"}), 400
 
-    return jsonify({"success": True, "data": toc_list})
+        offsets_found = []
+        search_start_page = toc_pages[-1]
+
+        for entry in raw_toc_entries[:5]:
+            search_title = entry["title"]
+            
+            for i in range(search_start_page, total_pages):
+                page_text = pdf.pages[i].extract_text()
+                if page_text and search_title in page_text:
+                    actual_physical_page = i + 1 
+                    offsets_found.append(actual_physical_page - entry["page_ref"])
+                    break
+        
+        if offsets_found:
+            offset = max(set(offsets_found), key=offsets_found.count)
+        else:
+            offset = 0
+
+        for entry in raw_toc_entries:
+            toc_list.append({
+                "title": entry["title"], 
+                "page": entry["page_ref"],
+                "jump_page": entry["page_ref"] + offset 
+            })
+
+    return jsonify({"success": True, "data": toc_list, "detected_offset": offset })
