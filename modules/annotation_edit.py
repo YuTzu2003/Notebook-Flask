@@ -71,7 +71,7 @@ def upload_pdf():
     
     doc_uuid = str(uuid.uuid4())
     storage_name = f"{doc_uuid}.pdf" # 系統存檔名
-    pdf_path = os.path.join(UPLOAD_Folder, storage_name)
+    pdf_path = f"{UPLOAD_Folder}/{storage_name}"
     f.save(pdf_path)
 
     # 頁數與尺寸
@@ -83,7 +83,8 @@ def upload_pdf():
     sql = """INSERT INTO Documents (DocID, User_ID, OriginalName, StorageName, Pages) VALUES (?, ?, ?, ?, ?) """
     execute_query(sql, (doc_uuid, user_id, original_name, storage_name, total_pages))
 
-    json_path = os.path.join(UPLOAD_Folder, doc_uuid + ".json")
+    json_path = f"{UPLOAD_Folder}/{doc_uuid}.json"
+
     mods = {}
     if os.path.exists(json_path):
         with open(json_path, "r", encoding="utf-8") as jf:
@@ -108,8 +109,8 @@ def upload_pdf():
 @login_required
 def get_pdf_content(doc_id):
     filename = doc_id if doc_id.lower().endswith('.pdf') else f"{doc_id}.pdf"
-    pdf_path = os.path.join(UPLOAD_Folder, filename)
-
+    pdf_path = f"{UPLOAD_Folder}/{filename}"
+    
     if not os.path.isfile(pdf_path):
         return "PDF not found", 404
 
@@ -168,10 +169,10 @@ def delete_page():
 def save():
     data = request.json
     doc_id, original_name, all_mods = data.get("doc_id"), data.get("original_name", "note.pdf"), data["all_modifications"]
-    with open(os.path.join(NOTE_Folder, f"{doc_id}.json"), "w", encoding="utf-8") as jf:
+    with open(f"{NOTE_Folder}/{doc_id}.json", "w", encoding="utf-8") as jf:
         json.dump(all_mods, jf, ensure_ascii=False, indent=2)
     
-    doc = fitz.open(os.path.join(UPLOAD_Folder, f"{doc_id}.pdf"))
+    doc = fitz.open(f"{UPLOAD_Folder}/{doc_id}.pdf")
     for p_idx_str, objs in all_mods.items():
         idx = int(p_idx_str)
         if idx >= len(doc): continue
@@ -254,71 +255,39 @@ def save():
     execute_query("UPDATE Documents SET UploadTime = ? WHERE DocID = ? AND User_ID = ?", (datetime.now(), doc_id, session.get("ID")))
     return send_file(out_buffer, mimetype='application/pdf', as_attachment=True, download_name=f"{os.path.splitext(original_name)[0]}_note.pdf")
 
-import os
-import re
-from flask import request, jsonify
 
 @notes_bp.route("/analyze_toc", methods=["POST"])
 def analyze_toc():
     data = request.json
-    filename = data.get("pdf_name")
-    toc_str = data.get("toc_pages", "")
-
-    pdf_path = os.path.join(UPLOAD_Folder, filename)
-    toc_pages = parse_page_range(toc_str)
-
-    if not toc_pages:
-        return jsonify({"error": "請輸入目錄頁碼範圍"}), 400
-
-    toc_list = []
-
-    with pdfplumber.open(pdf_path) as pdf:
-        total_pages = len(pdf.pages)
-
-        raw_toc_entries = []
-        for p_num in toc_pages:
-            if p_num > total_pages: continue
-            
-            page = pdf.pages[p_num - 1] 
-            text = page.extract_text()
-            if not text: continue
-            
-            for line in text.split("\n"):
-                match = re.search(r'^(.*?)\s+(\d+)$', line.strip())
-                if match:
-                    raw_title = match.group(1)
-                    page_ref = int(match.group(2))
-                    title = re.sub(r'[.．。\s]+$', '', raw_title).strip()
-                    
-                    if title and not title.isdigit() and len(title) > 1:
-                        raw_toc_entries.append({"title": title, "page_ref": page_ref})
-
-        if not raw_toc_entries:
-            return jsonify({"error": "在頁面找不到目錄"}), 400
-
-        offsets_found = []
-        search_start_page = toc_pages[-1]
-
-        for entry in raw_toc_entries[:5]:
-            search_title = entry["title"]
-            
-            for i in range(search_start_page, total_pages):
-                page_text = pdf.pages[i].extract_text()
-                if page_text and search_title in page_text:
-                    actual_physical_page = i + 1 
-                    offsets_found.append(actual_physical_page - entry["page_ref"])
-                    break
-        
-        if offsets_found:
-            offset = max(set(offsets_found), key=offsets_found.count)
+    toc_str, offset_input = str(data.get("toc_pages", "")).lower(), str(data.get("offset", "")).lower()
+    
+    with pdfplumber.open(os.path.join(UPLOAD_Folder, data.get("pdf_name"))) as pdf:
+        # 1. 決定目錄頁碼 (合併自動偵測邏輯)
+        if toc_str == "auto":
+            toc_pages = [i + 1 for i in range(min(15, len(pdf.pages))) if len(re.findall(r'^(.*?)\s+(\d+)$', pdf.pages[i].extract_text() or "", re.MULTILINE)) > 3]
         else:
-            offset = 0
+            toc_pages = parse_page_range(toc_str)
 
-        for entry in raw_toc_entries:
-            toc_list.append({
-                "title": entry["title"], 
-                "page": entry["page_ref"],
-                "jump_page": entry["page_ref"] + offset 
-            })
+        # 2. 抓取目錄數據
+        raw_toc = []
+        for p in [p for p in toc_pages if p <= len(pdf.pages)]:
+            for title, page_ref in re.findall(r'^(.*?)\s+(\d+)$', pdf.pages[p - 1].extract_text() or "", re.MULTILINE):
+                title = re.sub(r'[.．。\s]+$', '', title).strip()
+                if len(title) > 1: raw_toc.append({"title": title, "page_ref": int(page_ref)})
 
-    return jsonify({"success": True, "data": toc_list, "detected_offset": offset })
+        # 3. 計算頁碼偏移量 (Offset)
+        offset = 0 if offset_input == "auto" else int(offset_input or 0)
+        if offset_input == "auto" and raw_toc:
+            offsets = []
+            for e in raw_toc[:5]:
+                for i in range(toc_pages[-1], len(pdf.pages)):
+                    if e["title"] in (pdf.pages[i].extract_text() or ""):
+                        offsets.append((i + 1) - e["page_ref"])
+                        break
+            offset = max(set(offsets), key=offsets.count) if offsets else 0
+
+        return jsonify({
+            "success": True, 
+            "data": [{"title": e["title"], "page": e["page_ref"], "jump_page": e["page_ref"] + offset} for e in raw_toc], 
+            "detected_offset": offset,
+            "detected_range": f"{toc_pages[0]}-{toc_pages[-1]}" if toc_pages else ""})

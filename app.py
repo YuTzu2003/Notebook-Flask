@@ -40,8 +40,9 @@ def doc_tool():
     user_id = session.get("ID")
     rows = fetch_all("SELECT * FROM Documents WHERE DocID = ? AND User_ID = ?", (doc_id, user_id))
     doc_info = rows[0]
-    pdf_path = os.path.join(UPLOAD_Folder, doc_info['StorageName'])
-    json_path = os.path.join(NOTE_Folder, f"{doc_id}.json")
+
+    pdf_path = f"{UPLOAD_Folder}/{doc_info['StorageName']}"
+    json_path = f"{NOTE_Folder}/{doc_id}.json"
 
     if action == "delete":
         if execute_query("DELETE FROM Documents WHERE DocID = ? AND User_ID = ?", (doc_id, user_id)):
@@ -91,7 +92,7 @@ def docVersion():
         author = request.form.get('author')
         filename = file.filename
         file_uuid = str(uuid.uuid4())         
-        file_path = os.path.join(VERSION_Folder, filename)
+        file_path = f"{VERSION_Folder}/{filename}"
         file.save(file_path)
         size = os.path.getsize(file_path) # Bytes
         uploader = session.get("ID") 
@@ -131,7 +132,7 @@ def docVersion_tool(action, doc_id):
         result = fetch_all(sql_select, (doc_id,))
      
         filename = result[0]['FileName']
-        file_path = os.path.join(VERSION_Folder, filename)
+        file_path = f"{VERSION_Folder}/{filename}"
         if execute_query("DELETE FROM DocVersion WHERE ID = ?", (doc_id,)):
             os.remove(file_path)
             flash('刪除成功！', 'success')
@@ -182,7 +183,7 @@ def doc_mapping():
     file_map = {str(row['ID']): row['FileName'] for row in files}
 
     if str(old_id) not in file_map or str(new_id) not in file_map:
-        flash("找不到指定的PDF文", "error")
+        flash("找不到指定的PDF", "error")
         return redirect(url_for('mapping_page'))
 
 
@@ -225,7 +226,7 @@ def mapping_action():
         
         if result:
             result_filename = result[0]["ResultName"]
-            file_path = os.path.join(Mapping_Folder, result_filename)
+            file_path = f"{Mapping_Folder}/{result_filename}"
             if os.path.exists(file_path):
                 os.remove(file_path)
 

@@ -645,46 +645,36 @@ function download(btn) { download_save(btn, true); }
 
 async function analyzeStructure(form) {
     const list = document.getElementById("resultList");
-    const btn = form.querySelector('button[type="submit"]') || form.querySelector('button');
+    const btn = form.querySelector('button');
     
     if (btn) btn.disabled = true;
     list.innerHTML = '<div class="p-4 text-center text-muted small bg-light">目錄解析中...</div>';
 
-    try {
-        const r = await fetch("/analyze_toc", { 
-            method: "POST", 
-            headers: { "Content-Type": "application/json" }, 
-            body: JSON.stringify({ 
-                pdf_name: pdfDataInfo.pdf_name, 
-                toc_pages: document.getElementById("tocRange").value 
-            }) 
-        });
-        
-        const res = await r.json();
-        
-        if (!r.ok || res.error) {
-            throw new Error(res.error || `${r.status}`);
-        }
-        
-        if (res.data && res.data.length > 0) {
-            list.innerHTML = res.data.map(item => `
-                <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" 
-                   style="cursor:pointer;" 
-                   onclick="renderPage(${item.jump_page})">
-                   <span class="text-truncate">${item.title}</span>
-                   <span class="badge bg-secondary">P.${item.page}</span>
-                </a>`).join('');
-        } else {
-            list.innerHTML = '<div class="p-4 text-center text-muted small bg-light">未偵測到目錄格式的文字</div>';
-        }
-
-    } 
-    catch(e) {
-        list.innerHTML = `<div class="p-4 text-center text-danger small bg-light">${e.message || '發生錯誤'}</div>`;
-    } 
-    finally {
-        if (btn) btn.disabled = false;
+    const r = await fetch("/analyze_toc", { 
+        method: "POST", 
+        headers: { "Content-Type": "application/json" }, 
+        body: JSON.stringify({ 
+            pdf_name: pdfDataInfo.pdf_name, 
+            toc_pages: "auto", 
+            offset: "auto"
+        }) 
+    });
+    
+    const res = await r.json();
+    
+    if (res.data && res.data.length > 0) {
+        list.innerHTML = res.data.map(item => `
+            <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" 
+               style="cursor:pointer;" 
+               onclick="renderPage(${item.jump_page})">
+               <span class="text-truncate">${item.title}</span>
+               <span class="badge bg-secondary">P.${item.page}</span>
+            </a>`).join('');
+    } else {
+        list.innerHTML = '<div class="p-4 text-center text-muted small bg-light">未偵測到目錄格式的文字</div>';
     }
+
+    if (btn) btn.disabled = false;
 }
 
 function updateActiveToc(pageIdx) {

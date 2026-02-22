@@ -97,12 +97,9 @@ def manage_user():
         user_docs = cursor.fetchall()
 
         for row in user_docs:
-            doc_id = str(row[0])       
-            storage_name = str(row[1]) 
-
-            pdf_path = os.path.join("static/uploads", storage_name)
-            json_path = os.path.join("static/annotation", f"{doc_id}.json")
-
+            pdf_path = f"static/uploads/{str(row[1])}"
+            json_path = f"static/annotation/{str(row[0])}.json"
+            
             if os.path.exists(pdf_path):
                 os.remove(pdf_path)
 
