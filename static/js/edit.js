@@ -16,6 +16,7 @@ let isStickyMode = false, currentNoteObj = null, tempNoteImage = null;
 const noteModal = new bootstrap.Modal(document.getElementById('noteModal'));
 
 let interactionMode = 'text'; // 'text', 'highlight', 'underline', 'draw', 'object', 'sticky'
+let pendingSymbol = null;
 
 const hoverBox = document.getElementById('hoverPreview');
 const previewTxt = document.getElementById('previewText');
@@ -30,6 +31,8 @@ window.onload = async function() {
     pdfDataInfo = JSON.parse(storedData);
     document.getElementById("fileNameDisplay").innerText = pdfDataInfo.original_name;
     updateStyle('init');
+
+    initSymbolPicker();
 
     const loadingTask = pdfjsLib.getDocument(`/get_pdf_content/${pdfDataInfo.doc_id}`);
     pdfDoc = await loadingTask.promise;
@@ -65,16 +68,18 @@ async function renderPage(num) {
     await page.render({ canvasContext: pdfCtx, viewport: viewportRender }).promise;
 
     const textLayerDiv = document.getElementById("textLayer");
-    textLayerDiv.innerHTML = ""; 
-    textLayerDiv.style.width = `${viewportDisplay.width}px`;
-    textLayerDiv.style.height = `${viewportDisplay.height}px`;
-    
-    const textContent = await page.getTextContent();
-    pdfjsLib.renderTextLayer({
-        textContent: textContent,
-        container: textLayerDiv,
-        viewport: viewportDisplay,
-        textDivs: []
+        textLayerDiv.innerHTML = ""; 
+        textLayerDiv.style.width = `${viewportDisplay.width}px`;
+        textLayerDiv.style.height = `${viewportDisplay.height}px`;
+
+        textLayerDiv.style.setProperty('--scale-factor', scale); 
+
+        const textContent = await page.getTextContent();
+        pdfjsLib.renderTextLayer({
+            textContent: textContent,
+            container: textLayerDiv,
+            viewport: viewportDisplay,
+            textDivs: []
     });
 
     canvas.setWidth(viewportDisplay.width);
@@ -767,4 +772,218 @@ async function deleteCurrentPage() {
             alert("頁面已刪除！");
         }
     } catch(e) { alert("失敗"); } finally { isPageTurning = false; }
+}
+
+function initSymbolPicker() {
+
+    function getUnicodeRange(startHex, endHex) {
+        let symbols = [];
+        let start = parseInt(startHex, 16);
+        let end = parseInt(endHex, 16);
+        for (let i = start; i <= end; i++) {
+            symbols.push(String.fromCodePoint(i));
+        }
+        return symbols;
+    }
+
+    // 符號字典
+    const symbolDictionary = {
+        "常用": ["±", "×", "÷", "√", "∞", "≈", "≠", "≡", "≤", "≥", "∠", "△", "°", "℃", "℉", "✓", "✗", "★", "☆"],
+        "全形標點": getUnicodeRange('FF01', 'FF0F').concat(getUnicodeRange('FF1A', 'FF20'), getUnicodeRange('3000', '303F')),
+        "數學運算": getUnicodeRange('2200', '22FF'),
+        "箭頭符號": getUnicodeRange('2190', '21FF'),
+        "幾何圖形": getUnicodeRange('25A0', '25FF'),
+        "希臘字母": getUnicodeRange('0391', '03C9'),
+        "特殊符號": getUnicodeRange('2600', '26FF'),
+        "單位與數字": getUnicodeRange('2100', '214F').concat(getUnicodeRange('2460', '2473')),
+        "製表符號": getUnicodeRange('2500', '257F')
+    };
+
+    const tabsContainer = document.getElementById('symbolTabs');
+    const contentContainer = document.getElementById('symbolTabContent');
+
+    if (!tabsContainer || !contentContainer) return;
+
+    tabsContainer.innerHTML = '';
+    contentContainer.innerHTML = '';
+
+    let isFirst = true;
+    let tabIndex = 0; // 確保ID不重複 
+    for (const [category, symbols] of Object.entries(symbolDictionary)) {
+
+        const tabId = `sym-tab-${tabIndex++}`; 
+        const tabLi = document.createElement('li');
+        tabLi.className = 'nav-item';
+        tabLi.role = 'presentation';
+        tabLi.innerHTML = `
+            <button class="nav-link px-2 py-1 ${isFirst ? 'active' : ''}" 
+                    data-bs-toggle="pill" data-bs-target="#${tabId}" 
+                    type="button" role="tab" aria-selected="${isFirst}">
+                ${category}
+            </button>
+        `;
+        tabsContainer.appendChild(tabLi);
+
+        const paneDiv = document.createElement('div');
+        paneDiv.className = `tab-pane fade ${isFirst ? 'show active' : ''}`;
+        paneDiv.id = tabId;
+        paneDiv.role = 'tabpanel';
+
+        let gridHtml = '<div class="symbol-grid-auto">';
+        symbols.forEach(sym => {
+            gridHtml += `<button type="button" class="symbol-btn-auto" onclick="insertSymbol(this.innerText)">${sym}</button>`;
+        });
+        gridHtml += '</div>';
+
+        paneDiv.innerHTML = gridHtml;
+        contentContainer.appendChild(paneDiv);
+
+        isFirst = false;
+    }
+}
+function insertSymbol(symbol) {
+    const activeObj = canvas.getActiveObject();
+
+    // 當有選取文字
+    if (activeObj && (activeObj.type === 'i-text' || activeObj.type === 'text')) {
+        if (activeObj.isEditing) {
+            const start = activeObj.selectionStart;
+            const end = activeObj.selectionEnd;
+            const currentText = activeObj.text;
+            const newText = currentText.slice(0, start) + symbol + currentText.slice(end);
+            activeObj.set('text', newText);
+            activeObj.selectionStart = start + symbol.length;
+            activeObj.selectionEnd = start + symbol.length;
+            
+            if (activeObj.hiddenTextarea) {
+                activeObj.hiddenTextarea.value = newText;
+                activeObj.hiddenTextarea.selectionStart = activeObj.selectionStart;
+                activeObj.hiddenTextarea.selectionEnd = activeObj.selectionEnd;
+            }
+            
+            activeObj.initDimensions();
+            activeObj.setCoords();
+        } else {
+            activeObj.set('text', activeObj.text + symbol);
+        }
+        canvas.requestRenderAll();
+        saveCurrent();
+    } 
+    // 沒有選取任何東西，直接產生新文字框
+    else {
+        interactionMode = 'object'; 
+        updateModeUI();
+
+        const mainColor = document.getElementById("mainColor").value;
+        const mainSize = parseInt(document.getElementById("mainSize").value) || 24;
+        const fontFamily = document.getElementById("fontFamily").value;
+        const isBold = document.getElementById("boldBtn").classList.contains("active");
+
+        // 建立可編輯的IText
+        const t = new fabric.IText(symbol, { 
+            left: 100,
+            top: 100, 
+            fontSize: mainSize, 
+            fill: mainColor,
+            fontFamily: fontFamily,
+            fontWeight: isBold ? 'bold' : 'normal'
+        });
+
+        canvas.add(t).setActiveObject(t);
+        t.enterEditing();
+        t.selectAll();        
+        canvas.requestRenderAll();
+        saveCurrent();
+    }
+}
+
+async function openEquationEditor(existingLatex = "") {
+    const { value: latex } = await Swal.fire({
+        title: '編輯方程式',
+        width: 650,
+        html: `
+            <math-field id="mf" style="
+                width:100%;
+                min-height:60px;
+                font-size:24px;
+                border:1px solid #ccc;
+                border-radius:6px;
+                padding:10px;
+            ">${existingLatex}</math-field>
+
+            <div style="margin-top:15px; padding:10px; border:1px solid #eee;">
+                <div id="preview"></div>
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: '插入',
+        didOpen: () => {
+            const mf = document.getElementById("mf");
+            const preview = document.getElementById("preview");
+
+            // ❗ 關閉虛擬鍵盤（你之前說不要）
+            mf.mathVirtualKeyboardPolicy = "off";
+
+            const updatePreview = async () => {
+                const val = mf.value.trim();
+                if (!val) return;
+
+                preview.innerHTML = `\\(${val}\\)`;
+                await MathJax.typesetPromise([preview]);
+            };
+
+            mf.addEventListener("input", updatePreview);
+            updatePreview();
+        }
+    });
+
+    return latex;
+}async function insertEquation(existingObj = null) {
+    const existingLatex = existingObj?.latex || "";
+
+    const latex = await openEquationEditor(existingLatex);
+    if (!latex) return;
+
+    try {
+        // 建立隱藏容器
+        const container = document.createElement("div");
+        container.style.position = "absolute";
+        container.style.opacity = 0;
+        container.innerHTML = `\\(${latex}\\)`;
+        document.body.appendChild(container);
+
+        await MathJax.typesetPromise([container]);
+
+        const svg = container.querySelector("svg");
+        if (!svg) throw new Error("SVG 生成失敗");
+
+        const svgData = new XMLSerializer().serializeToString(svg);
+        const url = URL.createObjectURL(
+            new Blob([svgData], { type: "image/svg+xml" })
+        );
+
+        // 如果是編輯 → 移除舊的
+        if (existingObj) canvas.remove(existingObj);
+
+        fabric.Image.fromURL(url, (img) => {
+            img.set({
+                left: existingObj ? existingObj.left : 150,
+                top: existingObj ? existingObj.top : 150,
+                data_type: 'equation',
+                latex: latex
+            });
+
+            canvas.add(img);
+            canvas.setActiveObject(img);
+            canvas.renderAll();
+            saveCurrent();
+
+            URL.revokeObjectURL(url);
+            document.body.removeChild(container);
+        });
+
+    } catch (err) {
+        console.error(err);
+        Swal.fire("錯誤", "公式解析失敗", "error");
+    }
 }

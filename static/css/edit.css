@@ -165,6 +165,58 @@ canvas {
      overflow-y: auto; 
      height: calc(100vh - 80px); 
 }
+/* --- 特殊符號表專用樣式 --- */
+.symbol-grid-auto {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr); /* 一排顯示 7 個符號 */
+    gap: 4px;
+    max-height: 180px; /* 控制面板最大高度 */
+    overflow-y: auto;  /* 超過高度自動出現捲軸 */
+    padding-right: 4px;
+}
+
+.symbol-btn-auto {
+    width: 35px;
+    height: 35px;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #dee2e6;
+    background: #ffffff;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #333;
+    transition: all 0.2s ease-in-out;
+    padding: 0;
+}
+
+.symbol-btn-auto:hover {
+    background-color: #e9ecef;
+    border-color: #0d6efd;
+    color: #0d6efd;
+}
+
+.symbol-grid-auto::-webkit-scrollbar {
+    width: 6px;
+}
+
+.symbol-grid-auto::-webkit-scrollbar-track {
+    background: #f1f1f1; 
+}
+
+.symbol-grid-auto::-webkit-scrollbar-thumb {
+    background: #c1c1c1; 
+    border-radius: 4px;
+}
+
+.symbol-grid-auto::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8; 
+}
+
+#symbolTabs::-webkit-scrollbar {
+    display: none;
+}
 
 #wrap {
     position: relative;
@@ -203,19 +255,23 @@ canvas {
     z-index: 3;
     opacity: 1;
     line-height: 1.0;
+    transform-origin: 0 0; /* 確保整個層的縮放原點在左上角 */
 }
 
 .textLayer span {
     color: transparent;
+    position: absolute; /* PDF.js 依賴絕對定位來排版文字 */
+    white-space: pre; /* 【極度重要】防止空白字元被壓縮或換行，保持原生排版 */
     cursor: text;
+    transform-origin: 0% 0%; /* 【極度重要】確保每個字元的變形起點一致 */
 }
 
 .textLayer ::selection { 
-    background: rgba(0, 153, 255, 0.2); 
+    background: rgba(0, 153, 255, 0.3); 
     color: transparent; 
 }
 .textLayer ::-moz-selection { 
-    background: rgba(0, 153, 255, 0.2); 
+    background: rgba(0, 153, 255, 0.3); 
     color: transparent; 
 }
 
@@ -248,6 +304,17 @@ body.mode-highlight .textLayer { cursor: text; }
         padding-bottom: 10px;
     }
 }
+
+@media (min-width: 1920px) {
+    html {
+        font-size: 20px;
+    }
+}
+
+.toolbar-top, .toolbar-bottom {
+    flex-shrink: 0; /* 防止被擠到變形或消失 */
+}
+
 
 /* 隱藏捲軸樣式 (Optional) */
 ::-webkit-scrollbar { width: 8px; height: 8px; }

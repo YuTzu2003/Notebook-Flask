@@ -32,3 +32,8 @@ body {
     border-bottom: 3px solid #ffd000; 
 }
 
+@media (min-width: 1920px) {
+    html {
+        font-size: 18px;
+    }
+}
