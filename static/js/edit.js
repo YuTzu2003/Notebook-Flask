@@ -14,14 +14,11 @@ let pdfDoc = null, pdfDataInfo = null;
 let pageNum = 1, scale = 1.0; 
 let isStickyMode = false, currentNoteObj = null, tempNoteImage = null;
 const noteModal = new bootstrap.Modal(document.getElementById('noteModal'));
-
 let interactionMode = 'text'; // 'text', 'highlight', 'underline', 'draw', 'object', 'sticky'
 let pendingSymbol = null;
-
 const hoverBox = document.getElementById('hoverPreview');
 const previewTxt = document.getElementById('previewText');
 const previewImg = document.getElementById('previewImg');
-
 let isPageTurning = false;
 let draggingObj = null;
 
@@ -95,7 +92,7 @@ async function renderPage(num) {
         }
         canvas.renderAll();
     };
-
+    
     if (pdfDataInfo.mods && pdfDataInfo.mods[num-1]) {
         fabric.util.enlivenObjects(pdfDataInfo.mods[num-1], objs => {
             objs.forEach(o => {
@@ -117,45 +114,35 @@ async function renderPage(num) {
     updateModeUI();
 }
 
-// ======= 畫布內物件拖曳跨頁的邏輯 =======
 canvas.on('object:moving', function(e) {
     if (isPageTurning) return;
     
     const obj = e.target;
-    // 取得游標相對於畫布的實體位置
     const pointer = canvas.getPointer(e.e);
-    const buffer = -10; // 觸發換頁的邊緣緩衝值
-    const logicalHeight = canvas.getHeight() / scale;
+    const buffer = 0; // 邊緣緩衝區，0 代表碰到邊界就換頁
+    const canvasHeight = canvas.getHeight() / scale;
 
+    // 往上移動到上一頁
     if (pointer.y < buffer && pageNum > 1) {
-        // 拖曳到上邊緣 -> 回到上一頁
-        isPageTurning = true;
-        canvas.remove(obj); // 1. 先從當前頁移除
-        saveCurrent();      // 2. 儲存當前頁 (此時已不含該物件)
-        
-        // 3. 設定新頁面的放置位置 (底部)
-        obj.top = logicalHeight - (obj.height * obj.scaleY) - 50; 
-        draggingObj = obj;
-        
-        changePage(-1);     // 4. 觸發換頁
-        setTimeout(() => isPageTurning = false, 800); // 防抖動冷卻
-        
-    } else if (pointer.y > logicalHeight - buffer && pageNum < pdfDoc.numPages) {
-        // 拖曳到下邊緣 -> 前往下一頁
-        isPageTurning = true;
-        canvas.remove(obj);
-        saveCurrent();
-        
-        // 設定新頁面的放置位置 (頂部)
-        obj.top = 50; 
-        draggingObj = obj;
-        
-        changePage(1);
-        setTimeout(() => isPageTurning = false, 800);
+        triggerCrossPage(obj, -1, canvasHeight - (obj.height * obj.scaleY) - 20);
+    } 
+    // 往下移動到下一頁
+    else if (pointer.y > canvasHeight - buffer && pageNum < pdfDoc.numPages) {
+        triggerCrossPage(obj, 1, 20);
     }
 });
+function triggerCrossPage(obj, direction, newTop) {
+    isPageTurning = true;
+    canvas.remove(obj);
+    saveCurrent(); 
+    
+    obj.top = newTop; 
+    draggingObj = obj;
+    changePage(direction);
+    setTimeout(() => { isPageTurning = false; }, 1000);
+}
 
-// ======= 新增：滾輪滑動偵測跨頁邏輯 =======
+
 function initScrollToTurnPage() {
     const wrapElement = document.getElementById("wrap");
     let wheelTimeout;
@@ -163,14 +150,12 @@ function initScrollToTurnPage() {
     wrapElement.addEventListener("wheel", function(e) {
         if (isPageTurning) return;
         
-        // 判斷是否滾動到最底或最頂 (給予 2px 誤差寬容值)
         const isAtBottom = wrapElement.scrollHeight - Math.ceil(wrapElement.scrollTop) <= wrapElement.clientHeight + 2;
         const isAtTop = wrapElement.scrollTop <= 2;
 
         if (e.deltaY > 0 && isAtBottom) { 
-            // 往下滾動且到底部
             if (pageNum < pdfDoc.numPages) {
-                e.preventDefault(); // 防止滾動回彈
+                e.preventDefault();
                 isPageTurning = true;
                 changePage(1);
                 clearTimeout(wheelTimeout);
@@ -897,93 +882,3 @@ function insertSymbol(symbol) {
     }
 }
 
-async function openEquationEditor(existingLatex = "") {
-    const { value: latex } = await Swal.fire({
-        title: '編輯方程式',
-        width: 650,
-        html: `
-            <math-field id="mf" style="
-                width:100%;
-                min-height:60px;
-                font-size:24px;
-                border:1px solid #ccc;
-                border-radius:6px;
-                padding:10px;
-            ">${existingLatex}</math-field>
-
-            <div style="margin-top:15px; padding:10px; border:1px solid #eee;">
-                <div id="preview"></div>
-            </div>
-        `,
-        showCancelButton: true,
-        confirmButtonText: '插入',
-        didOpen: () => {
-            const mf = document.getElementById("mf");
-            const preview = document.getElementById("preview");
-
-            // ❗ 關閉虛擬鍵盤（你之前說不要）
-            mf.mathVirtualKeyboardPolicy = "off";
-
-            const updatePreview = async () => {
-                const val = mf.value.trim();
-                if (!val) return;
-
-                preview.innerHTML = `\\(${val}\\)`;
-                await MathJax.typesetPromise([preview]);
-            };
-
-            mf.addEventListener("input", updatePreview);
-            updatePreview();
-        }
-    });
-
-    return latex;
-}async function insertEquation(existingObj = null) {
-    const existingLatex = existingObj?.latex || "";
-
-    const latex = await openEquationEditor(existingLatex);
-    if (!latex) return;
-
-    try {
-        // 建立隱藏容器
-        const container = document.createElement("div");
-        container.style.position = "absolute";
-        container.style.opacity = 0;
-        container.innerHTML = `\\(${latex}\\)`;
-        document.body.appendChild(container);
-
-        await MathJax.typesetPromise([container]);
-
-        const svg = container.querySelector("svg");
-        if (!svg) throw new Error("SVG 生成失敗");
-
-        const svgData = new XMLSerializer().serializeToString(svg);
-        const url = URL.createObjectURL(
-            new Blob([svgData], { type: "image/svg+xml" })
-        );
-
-        // 如果是編輯 → 移除舊的
-        if (existingObj) canvas.remove(existingObj);
-
-        fabric.Image.fromURL(url, (img) => {
-            img.set({
-                left: existingObj ? existingObj.left : 150,
-                top: existingObj ? existingObj.top : 150,
-                data_type: 'equation',
-                latex: latex
-            });
-
-            canvas.add(img);
-            canvas.setActiveObject(img);
-            canvas.renderAll();
-            saveCurrent();
-
-            URL.revokeObjectURL(url);
-            document.body.removeChild(container);
-        });
-
-    } catch (err) {
-        console.error(err);
-        Swal.fire("錯誤", "公式解析失敗", "error");
-    }
-}
