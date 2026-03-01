@@ -7,6 +7,7 @@ import uuid
 from modules.db import execute_query, fetch_all
 from modules.annotation_edit import notes_bp
 from modules.mapping import UseMapping
+from modules.annotation_migrate import migrate_all_to_xfdf
 
 app = Flask(__name__)
 
@@ -293,6 +294,41 @@ def mapping_action():
 @login_required
 def move_page():
     return render_template("move.html")
+
+@app.route("/notes")
+def notes():
+    return render_template("notes.html")
+
+@app.route("/annotation/migrate", methods=["POST"])
+def migrate_annotation():
+
+    old_pdf = request.files["old_pdf"]
+    new_pdf = request.files["new_pdf"]
+    xfdf = request.files["xfdf"]
+    mapping = request.files["mapping"]
+
+    old_path = os.path.join("uploads", old_pdf.filename)
+    new_path = os.path.join("uploads", new_pdf.filename)
+    xfdf_path = os.path.join("uploads", xfdf.filename)
+    mapping_path = os.path.join("uploads", mapping.filename)
+
+    old_pdf.save(old_path)
+    new_pdf.save(new_path)
+    xfdf.save(xfdf_path)
+    mapping.save(mapping_path)
+
+    output = os.path.join("uploads", "result.xfdf")
+
+    migrate_all_to_xfdf(
+        old_path,
+        new_path,
+        xfdf_path,
+        output,
+        mapping_path
+    )
+
+    return jsonify({"status": "success"})
+
       
 if __name__ == "__main__":
     app.run(debug=True,host="0.0.0.0",port=5001)
