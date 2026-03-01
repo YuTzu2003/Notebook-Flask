@@ -70,11 +70,16 @@ def admin_required(func):
 def admin_users():
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT ID, UserID, Name, Position, Location, Last_login FROM Users ORDER BY Last_login DESC")
+    sort_val = request.args.get('sort_by', 'Last_login')# 預設
+    
+    order = 'DESC' if sort_val == 'Last_login' else 'ASC'
+    sql = f"SELECT ID, UserID, Name, Position, Location, Last_login FROM Users ORDER BY {sort_val} {order}"
+    
+    cursor.execute(sql)
     columns = [column[0] for column in cursor.description]
     users = [dict(zip(columns, row)) for row in cursor.fetchall()]
     conn.close()
-    return render_template("admin.html", users=users)
+    return render_template("admin.html", users=users, current_sort=sort_val)
 
 @auth_bp.route("/admin/manage_user", methods=["POST"])
 @admin_required

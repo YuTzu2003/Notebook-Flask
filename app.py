@@ -110,9 +110,11 @@ def docVersion():
         
         return redirect(request.url)
     
-    sql = "SELECT dbo.DocVersion.*, dbo.Users.Name FROM dbo.DocVersion INNER JOIN dbo.Users ON dbo.DocVersion.Uploader = dbo.Users.ID"
+    sort_by = request.args.get('sort_by', 'UploadTime')
+    sql = f"""SELECT dbo.DocVersion.*, dbo.Users.Name FROM dbo.DocVersion INNER JOIN dbo.Users ON dbo.DocVersion.Uploader = dbo.Users.ID ORDER BY {sort_by} ASC"""
     documents = fetch_all(sql)
-    return render_template('docVersion.html', documents=documents)
+    return render_template('docVersion.html', documents=documents, current_sort=sort_by)
+
 
 @app.route('/docVersion_tool/<action>', defaults={'doc_id': None}, methods=['GET', 'POST'])
 @app.route('/docVersion_tool/<action>/<doc_id>', methods=['GET', 'POST'])
@@ -141,18 +143,31 @@ def docVersion_tool(action, doc_id):
 
     elif action == 'edit' and request.method == 'POST':
         edit_id = request.form.get('edit_id')
+        new_filename = request.form.get('edit_filename')
         new_version = request.form.get('edit_version')
         new_author = request.form.get('edit_author')
 
-        sql = "UPDATE DocVersion SET Version = ?, Author = ? WHERE ID = ?"
-        if execute_query(sql, (new_version, new_author, edit_id)):
+        new_filename = new_filename.strip() 
+        if not new_filename.lower().endswith('.pdf'):
+            new_filename += '.pdf'
+
+        # 從資料庫抓出舊檔名
+        sql_select = "SELECT FileName FROM DocVersion WHERE ID = ?"
+        result = fetch_all(sql_select, (edit_id,))
+            
+        old_filename = result[0]['FileName']
+
+        if old_filename != new_filename:
+            os.rename(f"{VERSION_Folder}/{old_filename}", f"{VERSION_Folder}/{new_filename}")
+
+        sql = "UPDATE DocVersion SET FileName = ?, Version = ?, Author = ? WHERE ID = ?"
+        if execute_query(sql, (new_filename, new_version, new_author, edit_id)):
             flash('更新成功！', 'success')
         else:
             flash('更新失敗！', 'error')
 
     else:
         flash('無效的操作', 'error')
-
     return redirect(url_for('docVersion'))
 
 
@@ -167,6 +182,7 @@ def mapping_page():
                     FROM MappingRecord INNER JOIN Users ON MappingRecord.Creator = Users.ID 
                     LEFT OUTER JOIN DocVersion AS DocVersion_Old ON MappingRecord.OldDocID = DocVersion_Old.ID 
                     LEFT OUTER JOIN DocVersion AS DocVersion_New ON MappingRecord.NewDocID = DocVersion_New.ID
+                    ORDER BY dbo.MappingRecord.CreateTime ASC
                 """
     history = fetch_all(sql_history)
     return render_template('mapping.html',files=docVersion,history=history)

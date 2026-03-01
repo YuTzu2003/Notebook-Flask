@@ -49,8 +49,18 @@
         </div>
         {% endif %} 
         <div class="card border-0 shadow-sm rounded-3">
-            <div class="card-header bg-white border-bottom py-3">
-                <h5 class="mb-0 text-secondary">文件版本</h5>
+            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 text-secondary">文件版本</h5>              
+                <form method="GET" action="/docVersion" class="d-flex align-items-center m-0 gap-2">
+                    <label for="sort_by" class="form-label mb-0 text-muted small">排序方式</label>
+                    <select name="sort_by" id="sort_by" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
+                        <option value="FileName" {% if current_sort == 'FileName' %}selected{% endif %}>檔名</option>
+                        <option value="Version" {% if current_sort == 'Version' %}selected{% endif %}>版本</option>
+                        <option value="Pages" {% if current_sort == 'Pages' %}selected{% endif %}>頁碼</option>
+                        <option value="Size" {% if current_sort == 'Size' %}selected{% endif %}>檔案大小</option>
+                        <option value="UploadTime" {% if current_sort == 'UploadTime' %}selected{% endif %}>上傳時間</option>                  
+                    </select>
+                </form>
             </div>
 
             <div class="card-body p-0">
@@ -78,16 +88,12 @@
                                 </td>
                                 
                                 <td>
-                                    <span class="badge bg-success-subtle text-success border border-secondary border-opacity-25 fw-normal">
-                                        {{ doc.Version }}
-                                    </span>
+                                    <span class="badge bg-success-subtle text-success border border-secondary border-opacity-25 fw-normal">{{ doc.Version }}</span>
                                 </td>
                                 
                                 <td>
                                     <div class="small text-dark">{{ doc.Pages }} 頁</div>
-                                    <div class="small text-muted" style="font-size: 0.8rem;">
-                                        {{ (doc.Size / 1024) | round(1) }} KB
-                                    </div>
+                                    <div class="small text-muted" style="font-size: 0.8rem;">{{ (doc.Size / 1024) | round(1) }} KB</div>
                                 </td>
                                 
                                 <td>
@@ -97,9 +103,7 @@
                                     </div>
                                 </td>
                                 
-                                <td class="text-muted small font-monospace">
-                                    {{ doc.UploadTime.strftime('%Y-%m-%d') }}
-                                </td>
+                                <td class="text-muted small font-monospace">{{ doc.UploadTime.strftime('%Y-%m-%d') }}</td>
 
                                 <td class="text-end pe-4">
                                     <div class="d-flex align-items-center justify-content-end gap-2">                     
@@ -110,6 +114,7 @@
                                                 data-bs-toggle="modal" 
                                                 data-bs-target="#editModal"
                                                 data-id="{{ doc.ID }}"
+                                                data-filename="{{ doc.FileName }}"
                                                 data-version="{{ doc.Version }}"
                                                 data-author="{{ doc.Author }}">編輯
                                         </button>
@@ -144,8 +149,11 @@
         
         <form action="/docVersion_tool/edit" method="POST">
             <div class="modal-body">
-                <input type="hidden" name="edit_id" id="modal_id">
-                
+                <input type="hidden" name="edit_id" id="modal_id">         
+                <div class="mb-3">
+                    <label class="form-label">檔名</label>
+                    <input type="text" class="form-control" name="edit_filename" id="modal_filename">
+                </div>
                 <div class="mb-3">
                     <label class="form-label">版本號</label>
                     <input type="text" class="form-control" name="edit_version" id="modal_version">
@@ -166,5 +174,18 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="/static/js/docVersion.js"></script>
+    <script>
+        const flashMessages = JSON.parse('{{ get_flashed_messages(with_categories=true)|tojson|safe }}');
+        if (flashMessages.length > 0) {
+            flashMessages.forEach(([category, message]) => {
+                Swal.fire({
+                    icon: category === 'success' ? 'success' : 'error',
+                    title: message,
+                    showConfirmButton: false,
+                    timer: 2000
+                });
+            });
+        }
+    </script>
 </body>
 </html>
