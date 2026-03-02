@@ -16,7 +16,10 @@
                 </li>  
                 <li class="nav-item">
                     <a class="nav-link {{'active' if request.path.startswith('/mapping') else ''}}" href="/mapping">版本比對</a>
-                </li>         
+                </li>        
+                <li class="nav-item">
+                    <a class="nav-link {{'active' if request.path.startswith('/notes') else ''}}" href="/notes">PDF XChange Editor筆記轉移</a>
+                </li>  
                 {% if session.Position == 'Admin' %}                
                 <li class="nav-item">
                     <a class="nav-link {{'active' if request.endpoint == 'auth.admin_users' else ''}}" href="{{ url_for('auth.admin_users') }}">使用者管理</a>

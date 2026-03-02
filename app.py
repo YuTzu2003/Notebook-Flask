@@ -15,6 +15,7 @@ UPLOAD_Folder = "static/uploads"
 NOTE_Folder = "static/annotation"
 Mapping_Folder = "static/docMapResult"
 VERSION_Folder = 'static/docVersion'
+PDF_xfdf_Folder = 'static/pdf_xfdf'
 
 app.secret_key = "replace-with-a-secret-key"
 app.register_blueprint(auth_bp)
@@ -288,6 +289,15 @@ def mapping_action():
         sql = "SELECT RecordID,ResultName FROM MappingRecord WHERE RecordID = ?"
         result = fetch_all(sql, (record_id,))
         return send_from_directory(Mapping_Folder, result[0]['ResultName'], as_attachment=True, mimetype="text/csv")
+    
+    elif action == "load_csv":
+        csv_name = request.form.get("csv_name")
+        file_path = os.path.join(Mapping_Folder, csv_name)
+        if os.path.exists(file_path):
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            return content  # 直接回傳 CSV 文字
+        return "找不到 CSV", 404
 
 
 @app.route("/move")
@@ -295,39 +305,88 @@ def mapping_action():
 def move_page():
     return render_template("move.html")
 
-@app.route("/notes")
-def notes():
-    return render_template("notes.html")
+# ---------------------------
+# notes.html 用的比對紀錄
+# ---------------------------
+@app.route("/notes", methods=["GET"])
+def notes_page():
+    # 只取已發布的比對紀錄
+    sql_history = """
+        SELECT MappingRecord.RecordID,
+               DocVersion_Old.FileName AS OldFileName,
+               DocVersion_Old.Version AS OldVersion,
+               DocVersion_New.FileName AS NewFileName,
+               DocVersion_New.Version AS NewVersion,
+               MappingRecord.ResultName,
+               MappingRecord.Status,
+               MappingRecord.CreateTime,
+               Users.Name AS CreatorName
+        FROM MappingRecord
+        INNER JOIN Users ON MappingRecord.Creator = Users.ID
+        LEFT JOIN DocVersion AS DocVersion_Old ON MappingRecord.OldDocID = DocVersion_Old.ID
+        LEFT JOIN DocVersion AS DocVersion_New ON MappingRecord.NewDocID = DocVersion_New.ID
+        WHERE MappingRecord.IsPublish = 1
+        ORDER BY MappingRecord.CreateTime DESC
+    """
+    mapping_history = fetch_all(sql_history)  # <- 這是下拉選單用
+    history = mapping_history  # <- 下方紀錄表也用同樣資料
+
+    return render_template("notes.html", mapping_history=mapping_history, history=history)
 
 @app.route("/annotation/migrate", methods=["POST"])
 def migrate_annotation():
+    try:
 
-    old_pdf = request.files["old_pdf"]
-    new_pdf = request.files["new_pdf"]
-    xfdf = request.files["xfdf"]
-    mapping = request.files["mapping"]
+        # 使用者上傳的 XFDF
+        xfdf = request.files["xfdf"]
+        mapping_id = request.form.get("mapping_id")
 
-    old_path = os.path.join("uploads", old_pdf.filename)
-    new_path = os.path.join("uploads", new_pdf.filename)
-    xfdf_path = os.path.join("uploads", xfdf.filename)
-    mapping_path = os.path.join("uploads", mapping.filename)
+        if not mapping_id:
+            return jsonify({"status": "error", "message": "未選擇版本比對紀錄"})
 
-    old_pdf.save(old_path)
-    new_pdf.save(new_path)
-    xfdf.save(xfdf_path)
-    mapping.save(mapping_path)
+        # 從資料庫取對應的舊版、新版 PDF 與 mapping CSV
+        sql = """
+        SELECT 
+            DocVersion_Old.FileName AS old_file, 
+            DocVersion_New.FileName AS new_file, 
+            MappingRecord.ResultName AS csv_file
+        FROM MappingRecord
+        LEFT JOIN DocVersion AS DocVersion_Old ON MappingRecord.OldDocID = DocVersion_Old.ID
+        LEFT JOIN DocVersion AS DocVersion_New ON MappingRecord.NewDocID = DocVersion_New.ID
+        WHERE MappingRecord.RecordID = ?
+        """
+        row = fetch_all(sql, (mapping_id,))
+        if not row:
+            return jsonify({"status": "error", "message": "找不到比對紀錄"})
 
-    output = os.path.join("uploads", "result.xfdf")
+        row = row[0]
 
-    migrate_all_to_xfdf(
-        old_path,
-        new_path,
-        xfdf_path,
-        output,
-        mapping_path
-    )
+        old_pdf_path = os.path.join(VERSION_Folder, row['old_file'])
+        new_pdf_path = os.path.join(VERSION_Folder, row['new_file'])
+        mapping_csv_path = os.path.join(Mapping_Folder, row['csv_file'])
 
-    return jsonify({"status": "success"})
+        xfdf_path = os.path.join(PDF_xfdf_Folder, xfdf.filename)
+        xfdf.save(xfdf_path)
+
+        output = os.path.join(PDF_xfdf_Folder, "result.xfdf")
+
+        # 呼叫轉移函式
+        migrate_all_to_xfdf(
+            old_pdf_path,
+            new_pdf_path,
+            xfdf_path,
+            output,
+            mapping_csv_path
+        )
+
+        return jsonify({"status": "success"})
+
+    except Exception as e:
+        print("ERROR:", e)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        })
 
       
 if __name__ == "__main__":

@@ -103,7 +103,7 @@ def migrate_all_to_xfdf(old_pdf_path, new_pdf_path, xfdf_in, xfdf_out, mapping_c
         rx0, ry_bot, rx1, ry_top = map(float, rect_str.split(','))
         old_rect = fitz.Rect(rx0, old_h - ry_top, rx1, old_h - ry_bot)
 
-        # 🌟 AI 智慧錨點搜尋
+        #  AI 智慧錨點搜尋
         search_key, old_anchor_rect = find_nearest_text_anchor(old_page, old_rect)
         
         dx, dy, found = 0, 0, False
