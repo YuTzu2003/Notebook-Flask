@@ -7,7 +7,7 @@ import uuid
 from modules.db import execute_query, fetch_all
 from modules.annotation_edit import notes_bp
 from modules.mapping import UseMapping
-from modules.annotation_migrate import migrate_all_to_xfdf
+from modules.xfdf_annotation_migrate import migrate_all_to_xfdf
 
 app = Flask(__name__)
 
@@ -365,10 +365,21 @@ def migrate_annotation():
         new_pdf_path = os.path.join(VERSION_Folder, row['new_file'])
         mapping_csv_path = os.path.join(Mapping_Folder, row['csv_file'])
 
-        xfdf_path = os.path.join(PDF_xfdf_Folder, xfdf.filename)
+        # 原始檔名
+        original_name = xfdf.filename
+
+        # 拆檔名與副檔名
+        name, ext = os.path.splitext(original_name)
+
+        # 新檔名：加上 _轉移
+        new_filename = f"{name}_轉移{ext}"
+
+        # 存使用者上傳檔
+        xfdf_path = os.path.join(PDF_xfdf_Folder, original_name)
         xfdf.save(xfdf_path)
 
-        output = os.path.join(PDF_xfdf_Folder, "result.xfdf")
+        # 轉移後輸出檔
+        output = os.path.join(PDF_xfdf_Folder, new_filename)
 
         # 呼叫轉移函式
         migrate_all_to_xfdf(
@@ -379,7 +390,9 @@ def migrate_annotation():
             mapping_csv_path
         )
 
-        return jsonify({"status": "success"})
+        return jsonify({
+        "status": "success",
+        "filename": new_filename})
 
     except Exception as e:
         print("ERROR:", e)
@@ -388,6 +401,60 @@ def migrate_annotation():
             "message": str(e)
         })
 
+@app.route("/annotation/migrate_existing_json", methods=["POST"])
+def migrate_existing_json():
+    try:
+        json_filename = request.form.get("json_filename")
+        mapping_id = request.form.get("mapping_id")
+
+        if not json_filename or not mapping_id:
+            return jsonify({"status": "error", "message": "缺少資料"})
+
+        # 查版本比對
+        sql = """
+        SELECT 
+            DocVersion_Old.FileName AS old_file, 
+            DocVersion_New.FileName AS new_file, 
+            MappingRecord.ResultName AS csv_file
+        FROM MappingRecord
+        LEFT JOIN DocVersion AS DocVersion_Old ON MappingRecord.OldDocID = DocVersion_Old.ID
+        LEFT JOIN DocVersion AS DocVersion_New ON MappingRecord.NewDocID = DocVersion_New.ID
+        WHERE MappingRecord.RecordID = ?
+        """
+        row = fetch_all(sql, (mapping_id,))
+        if not row:
+            return jsonify({"status": "error", "message": "找不到比對紀錄"})
+
+        row = row[0]
+
+        old_pdf_path = os.path.join(VERSION_Folder, row['old_file'])
+        new_pdf_path = os.path.join(VERSION_Folder, row['new_file'])
+        mapping_csv_path = os.path.join(Mapping_Folder, row['csv_file'])
+
+        json_path = os.path.join(app.root_path, "static", "annotation", json_filename)
+
+        name, ext = os.path.splitext(json_filename)
+        new_json_name = f"{name}_轉移{ext}"
+        output_json_path = os.path.join(app.root_path, "static", "annotation", new_json_name)
+
+        # 呼叫你的 JSON 轉移函式
+        migrate_with_json_output(
+            old_pdf_path,
+            new_pdf_path,
+            json_path,
+            mapping_csv_path,
+            None,
+            output_json_path
+        )
+
+        return jsonify({
+            "status": "success",
+            "json_filename": new_json_name
+        })
+
+    except Exception as e:
+        print("ERROR:", e)
+        return jsonify({"status": "error", "message": str(e)})
       
 if __name__ == "__main__":
     app.run(debug=True,host="0.0.0.0",port=5001)

@@ -17,10 +17,12 @@
 
         <!-- 上方操作區 -->
         <div class="card border-0 shadow-sm rounded-3 mb-4">
-            <div class="card-body p-4">
-                <h5 class="fw-bold mb-1">PDF XChange Editor筆記轉移</h5>
-                <p class="text-muted small mb-4">請選擇歷史版本比對紀錄，並上傳 XFDF 進行筆記轉移</p>
+            
+            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 text-secondary">程式筆記轉移</h5>
+            </div>
 
+            <div class="card-body p-4">
                 <form id="migrateForm" enctype="multipart/form-data">
                     <div class="row g-3 align-items-end">
 
@@ -70,7 +72,13 @@
                 $("body").loading("stop")
 
                 if(data.status==="success"){
-                    Swal.fire({icon:"success", title:"轉移完成", showConfirmButton:false, timer:1500}).then(()=>{location.reload()})
+                    Swal.fire({
+                        icon:"success",
+                        title:"轉移完成",
+                        confirmButtonText:"下載檔案"
+                    }).then(()=>{
+                        window.location.href = "/static/pdf_xfdf/" + data.filename
+                    })                
                 } else {
                     Swal.fire({icon:"error", title:"轉移失敗"})
                 }
