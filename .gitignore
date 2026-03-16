@@ -12,3 +12,5 @@ wheels/
 another/
 *.exe
 *.lock
+*.pdf
+*.csv
