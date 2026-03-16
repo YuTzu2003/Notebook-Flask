@@ -17,16 +17,13 @@
 
         <!-- 上方操作區 -->
         <div class="card border-0 shadow-sm rounded-3 mb-4">
-            
-            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
-                <h5 class="mb-0 text-secondary">程式筆記轉移</h5>
-            </div>
-
             <div class="card-body p-4">
-                <form id="migrateForm" enctype="multipart/form-data">
-                    <div class="row g-3 align-items-end">
+                <h5 class="fw-bold mb-1">程式筆記轉移</h5>
+                <p class="text-muted small mb-4">請選擇舊版與新版癌登手冊 系統將自動比對頁面並調整標註位置</p>
 
-                        <div class="col-md-6">
+                <form action="/mapping/doc_mapping" method="post" id="MappingForm">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-5">
                             <label class="form-label fw-bold text-secondary">選擇版本比對</label>
                             <select class="form-select" name="mapping_id" required>
                                 <option value="" disabled selected>請選擇版本比對紀錄...</option>
@@ -38,20 +35,18 @@
                             </select>
                         </div>
 
-                        <div class="col-md-4">
+                        <div class="col-md-5">
                             <label class="form-label fw-bold text-secondary">XFDF</label>
                             <input type="file" class="form-control" name="xfdf" accept=".xfdf" required>
                         </div>
 
                         <div class="col-md-2">
-                            <button type="button" class="btn btn-primary w-100" onclick="runMigrate()">開始轉移</button>
+                            <button type="button" class="btn btn-danger w-100" onclick="runMigrate()">開始轉移</button>
                         </div>
-
                     </div>
                 </form>
             </div>
         </div>
-
         
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>

@@ -15,7 +15,7 @@
     {% include 'navbar.html' %}
     <div class="container" style="margin-top: 90px;">
         <!-- 上傳區塊 -->
-        {% if session.Position == 'Admin' %}
+        {% if session.Position == 'Admin' or session.Position == 'CTR'%}
         <div class="card mb-4 shadow-sm">
             <div class="card-body">
                 <form method="POST" enctype="multipart/form-data">
@@ -109,7 +109,7 @@
                                     <div class="d-flex align-items-center justify-content-end gap-2">                     
                                         <a href="/docVersion_tool/download/{{ doc.ID }}" class="btn btn-sm btn-outline-dark">下載</a>
                                         <a href="/docVersion_tool/preview/{{ doc.ID }}" target="_blank" class="btn btn-sm btn-outline-secondary">預覽</a>
-                                        {% if session.Position == 'Admin' %}
+                                        {% if session.Position == 'Admin' or session.Position == 'CTR'%}
                                         <button type="button" class="btn btn-sm btn-outline-primary" 
                                                 data-bs-toggle="modal" 
                                                 data-bs-target="#editModal"
