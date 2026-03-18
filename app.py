@@ -132,16 +132,27 @@ def docVersion_tool(action, doc_id):
         return send_from_directory(VERSION_Folder, result[0]['FileName'], as_attachment=False)
 
     elif action == 'delete' and request.method == 'POST':
-        sql_select = "SELECT FileName FROM DocVersion WHERE ID = ?"
-        result = fetch_all(sql_select, (doc_id,))
-     
-        filename = result[0]['FileName']
-        file_path = f"{VERSION_Folder}/{filename}"
-        if execute_query("DELETE FROM DocVersion WHERE ID = ?", (doc_id,)):
-            os.remove(file_path)
-            flash('刪除成功！', 'success')
+        check_sql = """SELECT COUNT(*) AS count FROM dbo.MappingRecord WHERE OldDocID = ? OR NewDocID = ?"""
+        check_result = fetch_all(check_sql, (doc_id, doc_id))
+        
+        if check_result and check_result[0]['count'] > 0:
+            flash('該檔案存在於比對紀錄中，不可刪除！', 'error')
         else:
-            flash('資料庫刪除失敗', 'error')
+            sql_select = "SELECT FileName FROM DocVersion WHERE ID = ?"
+            result = fetch_all(sql_select, (doc_id,))
+            
+            if result:
+                filename = result[0]['FileName']
+                file_path = f"{VERSION_Folder}/{filename}"
+                
+                if execute_query("DELETE FROM DocVersion WHERE ID = ?", (doc_id,)):
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                    flash('刪除成功！', 'success')
+                else:
+                    flash('資料庫刪除失敗', 'error')
+            else:
+                flash('找不到該檔案', 'error')
 
     elif action == 'edit' and request.method == 'POST':
         edit_id = request.form.get('edit_id')
