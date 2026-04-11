@@ -1,26 +1,17 @@
-async function deleteDoc(docId) {
-    const result = await Swal.fire({
+function confirmDelete(event, formElement) {
+    event.preventDefault(); 
+    Swal.fire({
         title: '確定要刪除這份文件嗎？',
         text: "刪除後此檔案將永久移除！",
         icon: 'warning',
         showCancelButton: true,
         confirmButtonText: '確定刪除',
         cancelButtonText: '取消'
-    });
-
-    if (result.isConfirmed) {
-        const res = await fetch("/docVersion_tool", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "delete", doc_id: docId }) 
-        });
-        const data = await res.json();
-        if (data.success) {
-            Swal.fire({ icon: 'success', title: '已刪除', timer: 1000, showConfirmButton: false }).then(() => location.reload());
-        } else {
-            Swal.fire('無法刪除', data.message, 'error');
+    }).then((result) => {
+        if (result.isConfirmed) {
+            formElement.submit();
         }
-    }
+    });
 }
 
 document.addEventListener("DOMContentLoaded", function() {

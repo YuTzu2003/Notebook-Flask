@@ -13,3 +13,4 @@ wheels/
 *.lock
 *.pdf
 *.csv
+*.xfdf
