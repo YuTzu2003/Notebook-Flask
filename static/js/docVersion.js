@@ -1,3 +1,28 @@
+async function deleteDoc(docId) {
+    const result = await Swal.fire({
+        title: '確定要刪除這份文件嗎？',
+        text: "刪除後此檔案將永久移除！",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: '確定刪除',
+        cancelButtonText: '取消'
+    });
+
+    if (result.isConfirmed) {
+        const res = await fetch("/docVersion_tool", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "delete", doc_id: docId }) 
+        });
+        const data = await res.json();
+        if (data.success) {
+            Swal.fire({ icon: 'success', title: '已刪除', timer: 1000, showConfirmButton: false }).then(() => location.reload());
+        } else {
+            Swal.fire('無法刪除', data.message, 'error');
+        }
+    }
+}
+
 document.addEventListener("DOMContentLoaded", function() {
     var editModal = document.getElementById('editModal');
     if (editModal) {
@@ -5,7 +30,7 @@ document.addEventListener("DOMContentLoaded", function() {
             var button = event.relatedTarget;
             
             var filename = button.getAttribute('data-filename');
-            // 如果檔名以 .pdf 結尾 (不分大小寫)，就把最後 4 個字元切掉
+
             if (filename.toLowerCase().endsWith('.pdf')) {
                 filename = filename.slice(0, -4); 
             }

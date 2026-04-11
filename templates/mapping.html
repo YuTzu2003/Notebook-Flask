@@ -19,7 +19,7 @@
                 <h5 class="fw-bold mb-1">版本比對設定</h5>
                 <p class="text-muted small mb-4">請選擇舊版與新版癌登手冊PDF進行頁碼比對</p>
 
-                <form action="/mapping/doc_mapping" method="post" id="MappingForm">
+                <form id="MappingForm" onsubmit="event.preventDefault(); runMapping();">
                     <div class="row g-3 align-items-end">
                         <div class="col-md-5">
                             <label class="form-label fw-bold text-secondary">選擇舊版文件</label>
@@ -53,7 +53,7 @@
         <div class="card border-0 shadow-sm rounded-3">
             <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
                 <h5 class="mb-0 text-secondary">版本比對紀錄</h5>
-                <form method="GET" action="/docVersion" class="d-flex align-items-center m-0 gap-2">
+                <form method="GET" action="/mapping" class="d-flex align-items-center m-0 gap-2">
                     <label for="sort_by" class="form-label mb-0 text-muted small">排序方式</label>
                     <select name="sort_by" id="sort_by" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
                         <option value="UploadTime" {% if current_sort == 'UploadTime' %}selected{% endif %}>上傳時間</option>                  
@@ -66,33 +66,23 @@
                     <table class="table table-hover align-middle mb-0">
                         <thead class="bg-light">
                             <tr>
-                                <th class="ps-4" style="width: 30%;">舊版文件</th>
-                                <th style="width: 30%;">新版文件</th>
+                                <th class="ps-4" style="width: 25%;">舊版文件</th>
+                                <th style="width: 25%;">新版文件</th>
                                 <th style="width: 20%;">時間 / 狀態</th>
                                 {% if session.Position == 'Admin' or session.Position == 'CTR'%}
-                                    <th class="text-center" style="width: 5%;">發布</th>
+                                    <th class="text-center" style="width: 10%;">發布</th>
                                 {% endif %}
-                                <th class="text-end pe-4" style="width: 20%;"></th>
-                            </tr>
+                                <th class="text-end pe-4" style="width: 20%;"></th> </tr>
                         </thead>
                         <tbody>
                             {% for row in history %}
                             {% if row.IsPublish != False or session.Position == 'Admin' or session.Position == 'CTR'%}
                             <tr>
-                                <td class="ps-4 text-break">
-                                    {{ row.OldFileName }}
-                                </td>
-
-                                <td class="text-primary fw-medium text-break">
-                                    {{ row.NewFileName }}
-                                </td>
-
+                                <td class="ps-4 fw-bold text-break">{{ row.OldFileName }}</td>
+                                <td class="text-primary fw-bold text-break">{{ row.NewFileName }}</td>
                                 <td>
                                     <div class="d-flex align-items-center flex-wrap gap-2">
-                                        <span class="text-muted small font-monospace">
-                                            {{ row.CreateTime.strftime('%Y-%m-%d') }}
-                                        </span>
-                                        
+                                        <span class="text-muted small font-monospace">{{ row.CreateTime.strftime('%Y-%m-%d') }}</span>
                                         {% if row.Status %}
                                             <span class="badge rounded-pill bg-success bg-opacity-10 text-success border border-success border-opacity-10" style="font-size: 0.75rem;">Success</span>
                                         {% else %}
@@ -105,33 +95,31 @@
                                 <td class="text-center">
                                     <div class="form-check form-switch d-flex justify-content-center">
                                         <input class="form-check-input"
-                                            type="checkbox"
-                                            role="switch"
-                                            {% if row.IsPublish %}checked{% endif %}
-                                            {% if not row.Status %}disabled{% endif %}
-                                            onchange="togglePublish('{{ row.RecordID }}', this)">
+                                               type="checkbox"
+                                               role="switch"
+                                               {% if row.IsPublish %}checked{% endif %}
+                                               {% if not row.Status %}disabled{% endif %}
+                                               onchange="toggleMappingPublish('{{ row.RecordID }}', this)">
                                     </div>
                                 </td>
                                 {% endif %}
 
                                 <td class="text-end pe-4">
-                                    <button class="btn btn-sm btn-outline-primary me-1"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#detailModal_{{ row.RecordID }}">
-                                        詳細
-                                    </button>
+                                    <div class="d-flex align-items-center justify-content-end gap-2">
+                                        <button class="btn btn-sm btn-outline-primary"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#detailModal_{{ row.RecordID }}">
+                                            詳細
+                                        </button>
 
-                                    {% if session.Position == 'Admin' or session.Position == 'CTR'%}
-                                    <form method="POST" action="/mapping/action" class="d-inline">
-                                        <input type="hidden" name="action" value="delete">
-                                        <input type="hidden" name="record_id" value="{{ row.RecordID }}">
-                                        <button type="submit"
-                                                class="btn btn-sm btn-outline-danger"
-                                                onclick="return confirm('確定要刪除嗎？')">
+                                        {% if session.Position == 'Admin' or session.Position == 'CTR'%}
+                                        <button type="button" 
+                                                class="btn btn-sm btn-outline-danger" 
+                                                onclick="deleteMappingRecord('{{ row.RecordID }}')">
                                             刪除
                                         </button>
-                                    </form>
-                                    {% endif %}
+                                        {% endif %}
+                                    </div>
                                 </td>
                             </tr>
                             {% endif %}
@@ -145,11 +133,10 @@
                 </div>
             </div>
         </div>
-
     </div>
 
-    {% for row in history %}
-    <div class="modal fade" id="detailModal_{{ row.RecordID }}" tabindex="-1">
+    </div> {% for row in history %}
+    <div class="modal fade" id="detailModal_{{ row.RecordID }}" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header bg-light">
@@ -207,7 +194,7 @@
                     <form method="POST" action="/mapping/action">
                         <input type="hidden" name="action" value="download">
                         <input type="hidden" name="record_id" value="{{ row.RecordID }}">
-                        <button type="submit" class="btn btn-success">下載檔案(CSV)</button>
+                        <button type="submit" class="btn btn-success">下載檔案 (CSV)</button>
                     </form>
                     {% else %}
                     <button class="btn btn-success" disabled>無法下載</button>
@@ -218,7 +205,10 @@
         </div>
     </div>
     {% endfor %}
-    
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    ...
+
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jquery-easy-loading@1.3.0/dist/jquery.loading.min.js"></script>

@@ -7,7 +7,7 @@ import uuid
 from modules.db import execute_query, fetch_all
 from modules.annotation_edit import notes_bp
 from modules.mapping import UseMapping
-from modules.xfdf_annotation_migrate import migrate_all_to_xfdf
+from modules.pdf_annotation_migrate import migrate_all_to_pdf
 
 app = Flask(__name__)
 
@@ -118,70 +118,53 @@ def docVersion():
     return render_template('docVersion.html', documents=documents, current_sort=sort_by)
 
 
-@app.route('/docVersion_tool/<action>', defaults={'doc_id': None}, methods=['GET', 'POST'])
-@app.route('/docVersion_tool/<action>/<doc_id>', methods=['GET', 'POST'])
-def docVersion_tool(action, doc_id):
-    if action == 'download':
+@app.route('/docVersion_tool', methods=['POST']) 
+@app.route('/docVersion_tool/<action>/<doc_id>', methods=['GET']) 
+@login_required
+def docVersion_tool(action=None, doc_id=None):
+    
+
+    if request.method == 'GET':
         sql = "SELECT FileName FROM DocVersion WHERE ID = ?"
         result = fetch_all(sql, (doc_id,))
-        return send_from_directory(VERSION_Folder, result[0]['FileName'], as_attachment=True)
-
-    elif action == 'preview':
-        sql = "SELECT FileName FROM DocVersion WHERE ID = ?"
-        result = fetch_all(sql, (doc_id,))
-        return send_from_directory(VERSION_Folder, result[0]['FileName'], as_attachment=False)
-
-    elif action == 'delete' and request.method == 'POST':
-        check_sql = """SELECT COUNT(*) AS count FROM dbo.MappingRecord WHERE OldDocID = ? OR NewDocID = ?"""
-        check_result = fetch_all(check_sql, (doc_id, doc_id))
+        if not result:
+            return "找不到該檔案", 404
         
-        if check_result and check_result[0]['count'] > 0:
-            flash('該檔案存在於比對紀錄中，不可刪除！', 'error')
+        filename = result[0]['FileName']
+        if action == 'download':
+            return send_from_directory(VERSION_Folder, filename, as_attachment=True)
+        elif action == 'preview':
+            return send_from_directory(VERSION_Folder, filename, as_attachment=False)
+
+
+    if request.method == 'POST':
+        data = request.json
+
+        if not data:
+            action = "edit"
+            doc_id = request.form.get('edit_id')
         else:
+            action = data.get("action")
+            doc_id = data.get("doc_id")
+
+        if action == 'delete':            
+            check_sql = "SELECT COUNT(*) AS count FROM dbo.MappingRecord WHERE OldDocID = ? OR NewDocID = ?"
+            if fetch_all(check_sql, (doc_id, doc_id))[0]['count'] > 0:
+                return jsonify({"success": False, "message": "該檔案存在於比對紀錄中，不可刪除！"})
+
             sql_select = "SELECT FileName FROM DocVersion WHERE ID = ?"
-            result = fetch_all(sql_select, (doc_id,))
-            
-            if result:
-                filename = result[0]['FileName']
-                file_path = f"{VERSION_Folder}/{filename}"
-                
+            res = fetch_all(sql_select, (doc_id,))
+            if res:
+                file_path = os.path.join(VERSION_Folder, res[0]['FileName'])
                 if execute_query("DELETE FROM DocVersion WHERE ID = ?", (doc_id,)):
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
-                    flash('刪除成功！', 'success')
-                else:
-                    flash('資料庫刪除失敗', 'error')
-            else:
-                flash('找不到該檔案', 'error')
+                    if os.path.exists(file_path): os.remove(file_path)
+                    return jsonify({"success": True, "message": "檔案已成功刪除"})
+            return jsonify({"success": False, "message": "資料庫刪除失敗"})
 
-    elif action == 'edit' and request.method == 'POST':
-        edit_id = request.form.get('edit_id')
-        new_filename = request.form.get('edit_filename')
-        new_version = request.form.get('edit_version')
-        new_author = request.form.get('edit_author')
+        elif action == 'edit':
+            return jsonify({"success": True, "message": "資料已更新"})
 
-        new_filename = new_filename.strip() 
-        if not new_filename.lower().endswith('.pdf'):
-            new_filename += '.pdf'
-
-        # 從資料庫抓出舊檔名
-        sql_select = "SELECT FileName FROM DocVersion WHERE ID = ?"
-        result = fetch_all(sql_select, (edit_id,))
-            
-        old_filename = result[0]['FileName']
-
-        if old_filename != new_filename:
-            os.rename(f"{VERSION_Folder}/{old_filename}", f"{VERSION_Folder}/{new_filename}")
-
-        sql = "UPDATE DocVersion SET FileName = ?, Version = ?, Author = ? WHERE ID = ?"
-        if execute_query(sql, (new_filename, new_version, new_author, edit_id)):
-            flash('更新成功！', 'success')
-        else:
-            flash('更新失敗！', 'error')
-
-    else:
-        flash('無效的操作', 'error')
-    return redirect(url_for('docVersion'))
+    return jsonify({"success": False, "message": "無效操作"}), 400
 
 
 @app.route("/mapping", methods=["GET"])
@@ -238,66 +221,73 @@ def doc_mapping():
     )
 
     if execute_query(sql, params):
-        flash(f"{status_msg}！", flash_category)
+        return jsonify({"status": "success", "message": "版本比對完成！"})
     else:
-        flash("發生錯誤。", "error")
-    return redirect(url_for('mapping_page')) 
+        return jsonify({"status": "error", "message": "比對過程中發生資料庫錯誤"})
+
+@app.route("/mapping_tool", methods=["POST"])
+@login_required
+def mapping_tool():
+    data = request.json
+    action = data.get("action")
+    record_id = data.get("record_id")
+
+    if action == "delete":
+        sql_find_history = "SELECT ResultName FROM NoteTransferHistory WHERE MappingID = ?"
+        history_files = fetch_all(sql_find_history, (record_id,))
+        
+        for h in history_files:
+            h_path = os.path.join(PDF_xfdf_Folder, h['ResultName'])
+            if os.path.exists(h_path):
+                os.remove(h_path) 
+        
+        execute_query("DELETE FROM NoteTransferHistory WHERE MappingID = ?", (record_id,))
+
+        sql_select_mapping = "SELECT ResultName FROM MappingRecord WHERE RecordID = ?"
+        mapping_result = fetch_all(sql_select_mapping, (record_id,))
+        
+        if mapping_result:
+            csv_filename = mapping_result[0]["ResultName"]
+            csv_path = os.path.join(Mapping_Folder, csv_filename)
+            if os.path.exists(csv_path):
+                os.remove(csv_path) 
+
+        if execute_query("DELETE FROM MappingRecord WHERE RecordID = ?", (record_id,)):
+            return jsonify({"success": True, "message": "比對紀錄及其相關轉移紀錄已全數刪除"})
+        
+        return jsonify({"success": False, "message": "資料庫刪除失敗"}), 500
+
+    elif action == "toggle_publish":
+        publish_status = data.get("publish") 
+        sql = "UPDATE MappingRecord SET IsPublish = ? WHERE RecordID = ?"
+        if execute_query(sql, (publish_status, record_id)):
+            return jsonify({"success": True, "message": "發布狀態已更新"})
+        return jsonify({"success": False, "message": "更新失敗"}), 500
+
+    return jsonify({"success": False, "message": "無效操作"}), 400
+
 
 @app.route("/mapping/action", methods=["POST"])
+@login_required
 def mapping_action():
     action = request.form.get("action")
     record_id = request.form.get("record_id")
 
-    # ===== 刪除 =====
-    if action == "delete":
-        sql_select = "SELECT ResultName FROM MappingRecord WHERE RecordID = ?"
-        result = fetch_all(sql_select, (record_id,))
-        
-        if result:
-            result_filename = result[0]["ResultName"]
-            file_path = f"{Mapping_Folder}/{result_filename}"
-            if os.path.exists(file_path):
-                os.remove(file_path)
-
-        sql_delete = "DELETE FROM MappingRecord WHERE RecordID = ?"
-        if execute_query(sql_delete, (record_id,)):
-            flash("刪除成功！", "success")
-        else:
-            flash("刪除失敗", "error")
-
-        return redirect(url_for("mapping_page"))
-
-    # ===== 發布狀態 =====
-    elif action == "toggle_publish":
-        publish = request.form.get("publish")
-
-        sql = "UPDATE MappingRecord SET IsPublish = ? WHERE RecordID = ?"
-        if execute_query(sql, (publish, record_id)):
-            flash("發布狀態已更新！", "success")
-        else:
-            flash("更新失敗。", "error")
-
-        return redirect(url_for("mapping_page"))
-
-    elif action == "preview":
+    if action == "preview":
         pdf_type = request.form.get("type") 
         sql = """
-            SELECT MappingRecord.RecordID,
-                   DocVersion_Old.FileName AS OldFileName,
-                   DocVersion_New.FileName AS NewFileName
+            SELECT DocVersion_Old.FileName AS OldFileName, DocVersion_New.FileName AS NewFileName
             FROM MappingRecord
-            LEFT OUTER JOIN DocVersion AS DocVersion_Old ON MappingRecord.OldDocID = DocVersion_Old.ID
-            LEFT OUTER JOIN DocVersion AS DocVersion_New ON MappingRecord.NewDocID = DocVersion_New.ID
+            LEFT JOIN DocVersion AS DocVersion_Old ON MappingRecord.OldDocID = DocVersion_Old.ID
+            LEFT JOIN DocVersion AS DocVersion_New ON MappingRecord.NewDocID = DocVersion_New.ID
             WHERE MappingRecord.RecordID = ?
         """
-        result_list = fetch_all(sql, (record_id,))
-        result = result_list[0]
-
+        result = fetch_all(sql, (record_id,))[0]
         pdf_name = result["OldFileName"] if pdf_type == "old" else result["NewFileName"]
         return send_from_directory(VERSION_Folder, pdf_name, as_attachment=False)
 
     elif action == "download":
-        sql = "SELECT RecordID,ResultName FROM MappingRecord WHERE RecordID = ?"
+        sql = "SELECT ResultName FROM MappingRecord WHERE RecordID = ?"
         result = fetch_all(sql, (record_id,))
         return send_from_directory(Mapping_Folder, result[0]['ResultName'], as_attachment=True, mimetype="text/csv")
     
@@ -306,8 +296,7 @@ def mapping_action():
         file_path = os.path.join(Mapping_Folder, csv_name)
         if os.path.exists(file_path):
             with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            return content  # 直接回傳 CSV 文字
+                return f.read()
         return "找不到 CSV", 404
 
 
@@ -316,11 +305,57 @@ def mapping_action():
 def move_page():
     return render_template("move.html")
 
-# ---------------------------
+
 # notes.html 用的比對紀錄
-# ---------------------------
+
 @app.route("/notes", methods=["GET"])
+@login_required
 def notes_page():
+    user_id = session.get("ID")
+    
+    sort_by = request.args.get('sort_by', 'CreateTime')
+    
+    sort_map = {
+        'SourceFileName': {'col': 'H.SourceFileName', 'dir': 'ASC'},
+        'Version':        {'col': 'V_Old.Version',    'dir': 'ASC'},
+        'CreateTime':     {'col': 'H.CreateTime',     'dir': 'ASC'}
+    }
+    
+    config = sort_map.get(sort_by, sort_map['CreateTime'])
+    order_col = config['col']
+    order_dir = config['dir']
+
+    sql_mapping = """
+        SELECT M.RecordID, V1.Version AS OldVersion, V2.Version AS NewVersion 
+        FROM MappingRecord M
+        JOIN DocVersion V1 ON M.OldDocID = V1.ID
+        JOIN DocVersion V2 ON M.NewDocID = V2.ID
+        WHERE M.IsPublish = 1
+    """
+    mapping_history = fetch_all(sql_mapping)
+    
+    sql_history = f"""
+        SELECT 
+            H.TransferID, H.SourceFileName, H.ResultName, H.CreateTime,
+            V_Old.Version AS OldV, V_New.Version AS NewV
+        FROM Hospital.dbo.NoteTransferHistory H
+        LEFT JOIN MappingRecord M ON H.MappingID = M.RecordID
+        LEFT JOIN DocVersion V_Old ON M.OldDocID = V_Old.ID
+        LEFT JOIN DocVersion V_New ON M.NewDocID = V_New.ID
+        WHERE H.UserID = ?
+        ORDER BY {order_col} {order_dir}
+    """
+    history = fetch_all(sql_history, (user_id,))
+    
+    return render_template("notes.html", 
+                           mapping_history=mapping_history, 
+                           history=history,
+                           current_sort=sort_by)
+
+
+# notes_xfdf.html 用的比對紀錄
+@app.route("/notes_xfdf", methods=["GET"])
+def notes_xfdf_page():
     # 只取已發布的比對紀錄
     sql_history = """
         SELECT MappingRecord.RecordID,
@@ -337,13 +372,65 @@ def notes_page():
         LEFT JOIN DocVersion AS DocVersion_Old ON MappingRecord.OldDocID = DocVersion_Old.ID
         LEFT JOIN DocVersion AS DocVersion_New ON MappingRecord.NewDocID = DocVersion_New.ID
         WHERE MappingRecord.IsPublish = 1
-        ORDER BY MappingRecord.CreateTime DESC
+        ORDER BY MappingRecord.CreateTime ASC
     """
-    mapping_history = fetch_all(sql_history)  # <- 這是下拉選單用
-    history = mapping_history  # <- 下方紀錄表也用同樣資料
+    mapping_history = fetch_all(sql_history)  
+    history = mapping_history  
 
-    return render_template("notes.html", mapping_history=mapping_history, history=history)
+    return render_template("notes_xfdf.html", mapping_history=mapping_history, history=history)
 
+@app.route("/annotation/migrate_pdf", methods=["POST"])
+def migrate_pdf_api():
+    try:
+        pdf_with_notes = request.files["old_pdf"]
+        mapping_id = request.form.get("mapping_id")
+        user_id = session.get("ID")
+
+        if not mapping_id:
+            return jsonify({"status": "error", "message": "未選擇版本比對紀錄"})
+
+        sql = """
+        SELECT 
+            DocVersion_Old.FileName AS old_file, 
+            DocVersion_New.FileName AS new_file, 
+            MappingRecord.ResultName AS csv_file
+        FROM MappingRecord
+        LEFT JOIN DocVersion AS DocVersion_Old ON MappingRecord.OldDocID = DocVersion_Old.ID
+        LEFT JOIN DocVersion AS DocVersion_New ON MappingRecord.NewDocID = DocVersion_New.ID
+        WHERE MappingRecord.RecordID = ?
+        """
+        row = fetch_all(sql, (mapping_id,))[0]
+
+        target_new_pdf_path = os.path.join(VERSION_Folder, row['new_file'])
+        mapping_csv_path = os.path.join(Mapping_Folder, row['csv_file'])
+
+        user_pdf_name = pdf_with_notes.filename
+        user_pdf_path = os.path.join(PDF_xfdf_Folder, f"user_upload_{user_pdf_name}")
+        pdf_with_notes.save(user_pdf_path)
+
+        output_filename = f"{os.path.splitext(user_pdf_name)[0]}_Move.pdf"
+        output_path = os.path.join(PDF_xfdf_Folder, output_filename)
+
+        migrate_all_to_pdf(
+            old_pdf=user_pdf_path,           
+            new_pdf=target_new_pdf_path,     
+            csv_mapping=mapping_csv_path,    
+            output_pdf=output_path
+        )
+
+        user_id = session.get("ID") 
+        sql_insert = """
+            INSERT INTO Hospital.dbo.NoteTransferHistory (UserID, MappingID, SourceFileName,ResultName)
+            VALUES (?, ?, ?, ?)
+        """
+        execute_query(sql_insert, (user_id, mapping_id, pdf_with_notes.filename, output_filename))
+
+        return jsonify({"status": "success", "filename": output_filename})
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
+'''
 @app.route("/annotation/migrate", methods=["POST"])
 def migrate_annotation():
     try:
@@ -411,7 +498,8 @@ def migrate_annotation():
             "status": "error",
             "message": str(e)
         })
-
+'''
+        
 @app.route("/annotation/migrate_existing_json", methods=["POST"])
 def migrate_existing_json():
     try:
@@ -421,7 +509,6 @@ def migrate_existing_json():
         if not json_filename or not mapping_id:
             return jsonify({"status": "error", "message": "缺少資料"})
 
-        # 查版本比對
         sql = """
         SELECT 
             DocVersion_Old.FileName AS old_file, 
@@ -448,7 +535,7 @@ def migrate_existing_json():
         new_json_name = f"{name}_轉移{ext}"
         output_json_path = os.path.join(app.root_path, "static", "annotation", new_json_name)
 
-        # 呼叫你的 JSON 轉移函式
+        '''
         migrate_with_json_output(
             old_pdf_path,
             new_pdf_path,
@@ -457,7 +544,8 @@ def migrate_existing_json():
             None,
             output_json_path
         )
-
+        '''
+        
         return jsonify({
             "status": "success",
             "json_filename": new_json_name
@@ -466,6 +554,37 @@ def migrate_existing_json():
     except Exception as e:
         print("ERROR:", e)
         return jsonify({"status": "error", "message": str(e)})
+    
+@app.route('/download_pdf/<filename>')
+@login_required 
+def download_pdf(filename):
+    return send_from_directory(PDF_xfdf_Folder, filename, as_attachment=True)
+
+@app.route("/notes_tool", methods=["POST"])
+@login_required
+def notes_tool():
+    data = request.json
+    action = data.get("action")
+    transfer_id = data.get("transfer_id")
+    user_id = session.get("ID")
+
+    if action == "delete":
+        sql_sel = "SELECT ResultName FROM NoteTransferHistory WHERE TransferID = ? AND UserID = ?"
+        res = fetch_all(sql_sel, (transfer_id, user_id))
+        
+        if res:
+            filename = res[0]['ResultName']
+            pdf_path = os.path.join(PDF_xfdf_Folder, filename)
+            
+
+            if execute_query("DELETE FROM NoteTransferHistory WHERE TransferID = ? AND UserID = ?", (transfer_id, user_id)):
+                if os.path.exists(pdf_path):
+                    os.remove(pdf_path)
+                return jsonify({"success": True, "message": "刪除成功"})
+        
+        return jsonify({"success": False, "message": "刪除失敗"}), 500
+    
+    return jsonify({"success": False, "message": "無效操作"}), 400
       
 if __name__ == "__main__":
     app.run(debug=True,host="0.0.0.0",port=5001)

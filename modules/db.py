@@ -3,7 +3,7 @@ import pyodbc
 def get_conn():
     return pyodbc.connect(
         'DRIVER={ODBC Driver 17 for SQL Server};'
-        'SERVER=120.113.70.242;'
+        'SERVER=localhost;'
         'port=1433;' 
         'DATABASE=Hospital;'
         'UID=YLH;'           
