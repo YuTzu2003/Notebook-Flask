@@ -20,7 +20,7 @@
                 <form id="migrateForm" enctype="multipart/form-data">
                     <div class="row g-3 align-items-end">
                         <div class="col-md-5">
-                            <label class="form-label fw-bold text-secondary">選擇版本比對紀錄</label>
+                            <label class="form-label fw-bold">選擇版本比對紀錄</label>
                             <select class="form-select" name="mapping_id" required>
                                 <option value="" disabled selected>請選擇...</option>
                                 {% for row in mapping_history %}
@@ -32,7 +32,7 @@
                         </div>
 
                         <div class="col-md-5">
-                            <label class="form-label fw-bold text-secondary">含有筆記的舊PDF</label>
+                            <label class="form-label fw-bold">含有筆記的舊PDF</label>
                             <input type="file" class="form-control" name="old_pdf" accept=".pdf" required>
                         </div>
 

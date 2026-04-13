@@ -93,6 +93,7 @@ def docVersion():
             flash('檔案名稱為空', 'error') 
             return redirect(request.url)
 
+        os.makedirs(VERSION_Folder, exist_ok=True)
         version = request.form.get('version')
         author = request.form.get('author')
         filename = file.filename
@@ -616,3 +617,4 @@ def notes_tool():
       
 if __name__ == "__main__":
     app.run(debug=True,host="0.0.0.0",port=5001)
+    # app.run(debug=True,host="0.0.0.0",port=51000,ssl_context=('server.crt', 'server.key'))

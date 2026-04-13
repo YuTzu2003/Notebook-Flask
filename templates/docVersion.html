@@ -16,12 +16,12 @@
     <div class="container" style="margin-top: 90px;">
         {% if session.Position == 'Admin' or session.Position == 'CTR'%}
         <div class="card border-0 shadow-sm rounded-3 mb-4">
-            <div class="card-body p-4"> <form method="POST" enctype="multipart/form-data">
+            <div class="card-body p-4">
+                <h5 class="fw-bold mb-1">發布版本</h5>
+                <p class="text-muted small mb-4">請上傳癌登手冊版本更新PDF</p>
+
+                <form method="POST" enctype="multipart/form-data">
                     <div class="row g-3 align-items-end">
-                        <div class="mb-3">
-                            <h5 class="fw-bold text-dark m-0">發布版本</h5>
-                            <p class="text-muted small mt-1 mb-0">請上傳癌登手冊版本更新PDF</p>
-                        </div>
                         <div class="col-md-4">
                             <label class="form-label fw-bold">選擇檔案</label>
                             <input type="file" class="form-control" name="file" required>
