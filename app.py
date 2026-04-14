@@ -237,7 +237,7 @@ def doc_mapping():
         csv_filename, 
         creator,
         is_success,     # Status
-        0               # IsPublish
+        1               # IsPublish
     )
 
     if execute_query(sql, params):

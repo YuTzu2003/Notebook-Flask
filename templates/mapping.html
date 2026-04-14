@@ -98,7 +98,7 @@
                                                type="checkbox"
                                                role="switch"
                                                {% if row.IsPublish %}checked{% endif %}
-                                               {% if not row.Status %}disabled{% endif %}
+                                               {% if not row.Status %}enabled{% endif %}
                                                onchange="toggleMappingPublish('{{ row.RecordID }}', this)">
                                     </div>
                                 </td>
