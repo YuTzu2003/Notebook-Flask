@@ -197,10 +197,17 @@
 
                 <div class="modal-footer bg-light border-0">
                     {% if row.Status %}
-                    <form method="POST" action="/mapping/action">
+                    <form method="POST" action="/mapping/action" class="m-0">
+                        <input type="hidden" name="action" value="download_diff">
+                        <input type="hidden" name="record_id" value="{{ row.RecordID }}">
+                        <button type="submit" class="btn btn-outline-danger px-3">
+                            <i class="bi bi-file-earmark-pdf me-1"></i>下載差異標記 (PDF)
+                        </button>
+                    </form>
+                    <form method="POST" action="/mapping/action" class="m-0">
                         <input type="hidden" name="action" value="download">
                         <input type="hidden" name="record_id" value="{{ row.RecordID }}">
-                        <button type="submit" class="btn btn-success px-4">下載檔案 (CSV)</button>
+                        <button type="submit" class="btn btn-success px-4">下載對應表 (CSV)</button>
                     </form>
                     {% else %}
                     <button class="btn btn-success px-4" disabled>無法下載</button>

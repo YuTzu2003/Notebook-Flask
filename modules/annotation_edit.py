@@ -69,6 +69,9 @@ def upload_pdf():
     user_id = session.get("ID")
     original_name = f.filename
     
+    os.makedirs(UPLOAD_Folder, exist_ok=True)
+    os.makedirs(NOTE_Folder, exist_ok=True)
+
     doc_uuid = str(uuid.uuid4())
     storage_name = f"{doc_uuid}.pdf" # 系統存檔名
     pdf_path = f"{UPLOAD_Folder}/{storage_name}"
@@ -83,7 +86,7 @@ def upload_pdf():
     sql = """INSERT INTO Documents (DocID, User_ID, OriginalName, StorageName, Pages) VALUES (?, ?, ?, ?, ?) """
     execute_query(sql, (doc_uuid, user_id, original_name, storage_name, total_pages))
 
-    json_path = f"{UPLOAD_Folder}/{doc_uuid}.json"
+    json_path = f"{NOTE_Folder}/{doc_uuid}.json"
 
     mods = {}
     if os.path.exists(json_path):

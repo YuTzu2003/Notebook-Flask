@@ -220,24 +220,33 @@ def doc_mapping():
 
     old_pdf_path = f"{VERSION_Folder}/{file_map[str(old_id)]}"
     new_pdf_path = f"{VERSION_Folder}/{file_map[str(new_id)]}"
-    csv_filename = f"{uuid.uuid4()}.csv"
+    
+    unique_id = str(uuid.uuid4())
+    project_folder = f"{Mapping_Folder}/{unique_id}"
+    os.makedirs(project_folder, exist_ok=True)
+    
+    csv_filename = f"{unique_id}/{unique_id}.csv"
+    diff_pdf_filename = f"{unique_id}/{unique_id}_diff.pdf"
 
-    os.makedirs(Mapping_Folder, exist_ok=True)
     csv_result = f"{Mapping_Folder}/{csv_filename}"
-    result_df = UseMapping(old_pdf_path, new_pdf_path, csv_result)
+    diff_pdf_path = f"{Mapping_Folder}/{diff_pdf_filename}"
+    
+    result_df, diff_pages = UseMapping(old_pdf_path, new_pdf_path, csv_result, diff_pdf_path)
 
     is_success = 1 if not result_df.empty else 0
-    status_msg = "比對完成" if is_success else "比對失敗或無結果"
-    flash_category = "success" if is_success else "error"
+    diff_pages_str = ",".join(map(str, diff_pages)) if diff_pages else ""
 
-    sql = """INSERT INTO MappingRecord (OldDocID, NewDocID, ResultName, Creator, Status, IsPublish) VALUES (?, ?, ?, ?, ?, ?)"""
+    sql = """INSERT INTO MappingRecord (OldDocID, NewDocID, ResultName, Creator, Status, IsPublish, DiffPages, DiffPdfName) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"""
     params = (
         old_id,
         new_id,
         csv_filename, 
         creator,
-        is_success,     # Status
-        1               # IsPublish
+        is_success,
+        1,
+        diff_pages_str,
+        diff_pdf_filename
     )
 
     if execute_query(sql, params):
@@ -309,7 +318,22 @@ def mapping_action():
     elif action == "download":
         sql = "SELECT ResultName FROM MappingRecord WHERE RecordID = ?"
         result = fetch_all(sql, (record_id,))
-        return send_from_directory(Mapping_Folder, result[0]['ResultName'], as_attachment=True, mimetype="text/csv")
+        if result and result[0]['ResultName']:
+            rel_path = result[0]['ResultName']
+            folder = os.path.join(Mapping_Folder, os.path.dirname(rel_path))
+            filename = os.path.basename(rel_path)
+            return send_from_directory(folder, filename, as_attachment=True, download_name=filename)
+        return "找不到檔案", 404
+
+    elif action == "download_diff":
+        sql = "SELECT DiffPdfName FROM MappingRecord WHERE RecordID = ?"
+        result = fetch_all(sql, (record_id,))
+        if result and result[0]['DiffPdfName']:
+            rel_path = result[0]['DiffPdfName']
+            folder = os.path.join(Mapping_Folder, os.path.dirname(rel_path))
+            filename = os.path.basename(rel_path)
+            return send_from_directory(folder, filename, as_attachment=True, download_name="差異比對結果.pdf")
+        return "找不到差異檔案", 404
     
     elif action == "load_csv":
         csv_name = request.form.get("csv_name")
@@ -408,7 +432,8 @@ def migrate_pdf_api():
         SELECT 
             DocVersion_Old.FileName AS old_file, 
             DocVersion_New.FileName AS new_file, 
-            MappingRecord.ResultName AS csv_file
+            MappingRecord.ResultName AS csv_file,
+            MappingRecord.DiffPages AS diff_pages
         FROM MappingRecord
         LEFT JOIN DocVersion AS DocVersion_Old ON MappingRecord.OldDocID = DocVersion_Old.ID
         LEFT JOIN DocVersion AS DocVersion_New ON MappingRecord.NewDocID = DocVersion_New.ID
@@ -418,8 +443,10 @@ def migrate_pdf_api():
         TransferID = str(uuid.uuid4())
         row = fetch_all(sql, (mapping_id,))[0]
 
+        # 根據要求，使用乾淨的新版 PDF 作為底本
         target_new_pdf_path = os.path.join(VERSION_Folder, row['new_file'])
         mapping_csv_path = os.path.join(Mapping_Folder, row['csv_file'])
+        diff_pages_str = row.get('diff_pages', '')
 
         os.makedirs(Note_Folder, exist_ok=True)
         os.makedirs(Note_Upload, exist_ok=True)
@@ -434,7 +461,8 @@ def migrate_pdf_api():
             old_pdf=user_pdf_path,           
             new_pdf=target_new_pdf_path,     
             csv_mapping=mapping_csv_path,    
-            output_pdf=output_path
+            output_pdf=output_path,
+            diff_pages_str=diff_pages_str
         )
 
         user_id = session.get("ID") 

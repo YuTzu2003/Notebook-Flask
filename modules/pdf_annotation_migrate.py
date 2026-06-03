@@ -73,12 +73,12 @@ def find_precise_offset(page_old, page_new, old_rect, processed_offsets):
     return 0, 0, "兜底零位移"
 
 
-def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf):
+def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str=""):
     PN = pdfrw.PdfName
     reader_old = pdfrw.PdfReader(old_pdf)
     reader_new = pdfrw.PdfReader(new_pdf)
     doc_old, doc_new = fitz.open(old_pdf), fitz.open(new_pdf)
-    
+
     if not os.path.exists(csv_mapping):
         print(f"找不到對應表：{csv_mapping}")
         return
@@ -86,7 +86,10 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf):
     df = pd.read_csv(csv_mapping, encoding="utf-8-sig")
     df.columns = df.columns.str.strip()
     mapping = {int(r["Old_Page"]) - 1: int(r["Matched_New_Page"]) - 1 for _, r in df.iterrows()}
-    
+
+    # 紀錄舊版對應到新版，用於後續書籤文字
+    reverse_mapping = {int(r["Matched_New_Page"]) - 1: int(r["Old_Page"]) - 1 for _, r in df.iterrows()}
+
     processed_offsets_map = {}
 
     for old_idx, new_idx in mapping.items():
@@ -103,7 +106,7 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf):
 
         for annot in annots:
             if not annot.get('/Rect'): continue
-            
+
             subtype = annot.get('/Subtype')
             r = [float(x) for x in annot['/Rect']]
             old_h = p_old_f.rect.height
@@ -111,9 +114,9 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf):
             text_dx, text_dy, status = find_precise_offset(p_old_f, p_new_f, old_rect_f, processed_offsets_map[old_idx])
             dx = text_dx + page_origin_dx + MANUAL_ADJUST_X
             dy = text_dy + page_origin_dy + MANUAL_ADJUST_Y
-            
+
             processed_offsets_map[old_idx].append((old_rect_f, dx, dy))
-            
+
             if subtype == '/FreeText':
                 for key in ['/AP', '/RD', '/IT']:
                     if annot.get(key): del annot[key]
@@ -139,14 +142,14 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf):
 
             new_rect = [r[0] + dx, r[1] - dy, r[2] + dx, r[3] - dy]
             annot.Rect = pdfrw.PdfArray([pdfrw.PdfObject(f"{x:.4f}") for x in new_rect])
-            
+
             for key_name in ['QuadPoints', 'Vertices']:
                 val = annot.get(PN(key_name))
                 if val:
                     pts = [float(x) for x in val]
                     new_pts = [pdfrw.PdfObject(f"{(pts[i]+dx if i%2==0 else pts[i]-dy):.4f}") for i in range(len(pts))]
                     annot[PN(key_name)] = pdfrw.PdfArray(new_pts)
-            
+
             il = annot.get('/InkList')
             if il:
                 new_ink = pdfrw.PdfArray()
@@ -162,3 +165,28 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf):
     writer.write(output_pdf, reader_new)
     doc_old.close()
     doc_new.close()
+
+    # 處理書籤：如果在比對階段有發現差異頁碼，則將其加入最終輸出的 PDF 書籤中
+    if diff_pages_str:
+        try:
+            diff_pages = [int(p) for p in str(diff_pages_str).split(",") if p.strip()]
+            if diff_pages:
+                final_doc = fitz.open(output_pdf)
+                toc = final_doc.get_toc()
+
+                # 加入一個主書籤節點，讓差異頁面可以收合
+                diff_root_added = False
+
+                for p in diff_pages:
+                    new_idx = p - 1
+                    old_idx = reverse_mapping.get(new_idx, None)
+                    if old_idx is not None:
+                        toc.append([1, f"內容變更 (原 p.{old_idx + 1} -> 新 p.{p})", p])
+                    else:
+                        toc.append([1, f"新增內容 (新 p.{p})", p])
+
+                final_doc.set_toc(toc)
+                final_doc.saveIncr()
+                final_doc.close()
+        except Exception as e:
+            print(f"添加差異書籤失敗: {e}")

@@ -5,6 +5,7 @@ import re
 from rapidfuzz import process, fuzz
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from modules.pdf_diff import highlight_and_bookmark_diffs
 
 # 目錄比對
 def extract_toc(pdf_path, toc_pages="auto", offset_input="auto", max_search_pages=15):
@@ -202,9 +203,22 @@ def mapping_pages_with_toc_bounds(df_old, df_new, df_toc, output_csv):
     print(f"save to {output_csv}")
     return result_df
 
-def UseMapping(old_pdf, new_pdf, output_report):
+def UseMapping(old_pdf, new_pdf, output_report, diff_pdf_output):
     df_toc = toc_mapping(old_pdf, new_pdf)
     df_old_text = extract_text_with_tables(old_pdf)
     df_new_text = extract_text_with_tables(new_pdf)
     result_df = mapping_pages_with_toc_bounds(df_old_text, df_new_text, df_toc, output_csv=output_report)
-    return result_df
+    
+    # 建立 0-based mapping dictionary 給 pdf_diff 使用
+    mapping_dict = {
+        int(row["Old_Page"]) - 1: int(row["Matched_New_Page"]) - 1
+        for _, row in result_df.iterrows()
+    }
+    
+    try:
+        diff_pages, _ = highlight_and_bookmark_diffs(old_pdf, new_pdf, mapping_dict, diff_pdf_output)
+    except Exception as e:
+        print(f"差異標記生成失敗: {e}")
+        diff_pages = []
+
+    return result_df, diff_pages

@@ -67,34 +67,59 @@
 
         <div class="upload-section animate-fade-in">
             <h5 class="fw-bold mb-3"><i class="bi bi-cloud-upload me-2 text-primary"></i>快速上傳文件</h5>
-            <div id="drop-zone" class="upload-zone" onclick="document.getElementById('fileInput').click()">
+            <div id="dropZone" class="upload-zone">
                 <div class="text-center">
                     <i class="bi bi-file-earmark-plus display-4 text-primary opacity-50 mb-3"></i>
                     <p class="mb-1 text-dark fw-medium">將檔案拖曳至此處或點擊上傳</p>
                     <p class="text-muted small">僅支援 PDF 格式文件</p>
                 </div>
-                <input type="file" id="fileInput" multiple accept=".pdf" style="display: none" onchange="handleFiles(this.files)">
+                <input type="file" id="pdfInput" accept=".pdf" style="display: none">
             </div>
         </div>
 
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h5 class="fw-bold m-0 text-secondary">最近上傳的文件</h5>
-            <a href="/docVersion" class="btn btn-sm btn-light border px-3">查看全部 <i class="bi bi-arrow-right ms-1"></i></a>
+            <div class="input-group" style="width: 250px;">
+                <input type="text" class="form-control" id="searchInput" placeholder="搜尋檔名...">
+                <button class="btn btn-primary" type="button"><i class="bi bi-search"></i></button>
+            </div>
         </div>
 
         <div class="row g-4" id="file-grid">
-            <!-- 檔案會在這裡由 JavaScript 動態生成 -->
+            {% for doc in documents %}
+            <div class="col-lg-3 col-md-4 col-sm-6 doc-item">
+                <div class="doc-card card border-0 h-100 shadow-sm" onclick="doc_tool('edit', '{{ doc.DocID }}', event)">
+                    <div class="card-img-placeholder">
+                        <i class="bi bi-file-earmark-pdf display-1 text-danger opacity-75"></i>
+                    </div>
+                    <div class="card-body p-3">
+                        <h6 class="card-title text-truncate fw-bold mb-1" title="{{ doc.OriginalName }}">{{ doc.OriginalName }}</h6>
+                        <div class="d-flex justify-content-between align-items-center mt-2">
+                            <span class="badge bg-light text-secondary border fw-normal">{{ doc.Pages }} 頁</span>
+                            <small class="text-muted">{{ doc.UploadTime.strftime('%Y-%m-%d') }}</small>
+                        </div>
+                    </div>
+                    <div class="card-footer bg-transparent border-0 text-end p-2 pb-3 pe-3">
+                        <button class="btn btn-sm btn-outline-danger" onclick="doc_tool('delete', '{{ doc.DocID }}', event)">
+                            <i class="bi bi-trash"></i> 刪除
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="col-12">
+                <div class="text-center py-5 text-muted bg-white rounded-4 shadow-sm border border-light">
+                    <i class="bi bi-folder2-open display-4 mb-3 text-secondary opacity-50"></i>
+                    <p class="mb-0">目前尚無上傳的筆記文件</p>
+                </div>
+            </div>
+            {% endfor %}
         </div>
     </div>
 
-    <div id="spinner-overlay" class="spinner-overlay">
+    <div id="loadingOverlay" class="spinner-overlay">
         <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
-        <p class="mt-3 text-secondary small">正在上傳檔案...</p>
-    </div>
-
-    <div id="loading-overlay" class="spinner-overlay">
-        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
-        <p class="mt-3 text-secondary small">正在讀取檔案與標註紀錄</p>
+        <p id="loadingText" class="mt-3 text-secondary small fw-bold">處理中...</p>
     </div>
 {% endblock %}
 
