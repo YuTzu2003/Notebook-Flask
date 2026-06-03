@@ -119,12 +119,16 @@ async function doc_tool(actionType, docId, event) {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                action: actionType, // edit or delete
+                action: actionType, 
                 doc_id: docId
             })
         });
 
         const result = await response.json();
+
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || `伺服器錯誤 (${response.status})`);
+        }
 
         if (actionType === 'delete') {
             alert("刪除成功！");
@@ -151,8 +155,12 @@ async function doc_tool(actionType, docId, event) {
         console.error(err);
         alert("錯誤：" + err.message);
         overlay.style.display = 'none'; 
+        if (err.message.includes("已自動清理無效紀錄")) {
+            window.location.reload();
+        }
     }
 }
+
 
 // --- 搜尋 ---
 document.getElementById('searchInput').addEventListener('keyup', function(e) {

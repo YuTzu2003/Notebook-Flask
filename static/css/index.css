@@ -1,13 +1,12 @@
-/* 恢復原本整潔的版面 */
 .upload-section {
     background: #ffffff;
     border-radius: 16px;
     padding: 2rem;
+    border: 1px solid #e2e8f0;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     margin-bottom: 2.5rem;
 }
 
-/* 網站介紹樣式 */
 .hero-section {
     padding: 2rem 0;
 }
@@ -15,8 +14,8 @@
 .step-num {
     width: 32px;
     height: 32px;
-    background: #eff6ff;
-    color: #2563eb;
+    background: #e0e0e0;
+    color: #000000;
     border-radius: 8px;
     display: flex;
     align-items: center;
@@ -64,17 +63,20 @@
 
 /* 卡片網格 */
 .doc-card {
-    background: #fff;
+    background: #ffffff;
+    border: 1px solid #cbd5e1 !important;
     border-radius: 12px;
     transition: all 0.2s ease;
     height: 100%;
     overflow: hidden;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important; 
+    cursor: pointer;
 }
 
 .doc-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+    transform: translateY(-4px);
+    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1) !important;
+    border-color: #94a3b8 !important;
 }
 
 .card-img-placeholder {

@@ -1,6 +1,7 @@
 import fitz 
 import os
 import json
+import logging
 from flask import Flask, flash, redirect, render_template, request, jsonify, send_from_directory, session, url_for
 from modules.auth import auth_bp, login_required
 import uuid
@@ -8,6 +9,8 @@ from modules.db import execute_query, fetch_all
 from modules.annotation_edit import notes_bp
 from modules.mapping import UseMapping
 from modules.pdf_annotation_migrate import migrate_all_to_pdf
+
+logging.basicConfig(level=logging.INFO,format='%(asctime)s | %(levelname)s | %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
 
 app = Flask(__name__)
 
@@ -40,46 +43,66 @@ def edit_page():
 @app.route("/doc_tool", methods=["POST"])
 @login_required
 def doc_tool():
-    data = request.json
-    action, doc_id = data.get("action"), data.get("doc_id")
-    user_id = session.get("ID")
-    rows = fetch_all("SELECT * FROM Documents WHERE DocID = ? AND User_ID = ?", (doc_id, user_id))
-    doc_info = rows[0]
+    try:
+        data = request.json
+        action, doc_id = data.get("action"), data.get("doc_id")
+        user_id = session.get("ID")
+        rows = fetch_all("SELECT * FROM Documents WHERE DocID = ? AND User_ID = ?", (doc_id, user_id))
+        
+        if not rows:
+            return jsonify({"success": False, "message": "找不到文件紀錄"}), 404
+            
+        doc_info = rows[0]
 
-    pdf_path = f"{UPLOAD_Folder}/{doc_info['StorageName']}"
-    json_path = f"{NOTE_Folder}/{doc_id}.json"
+        pdf_path = f"{UPLOAD_Folder}/{doc_info['StorageName']}"
+        json_path = f"{NOTE_Folder}/{doc_id}.json"
 
-    if action == "delete":
-        if execute_query("DELETE FROM Documents WHERE DocID = ? AND User_ID = ?", (doc_id, user_id)):
-            for path in [pdf_path, json_path]:
-                if os.path.exists(path): os.remove(path)
-            return jsonify({"success": True, "message": "刪除成功"})
-        return jsonify({"success": False, "message": "刪除失敗"}), 500
+        if action == "delete":
+            if execute_query("DELETE FROM Documents WHERE DocID = ? AND User_ID = ?", (doc_id, user_id)):
+                for path in [pdf_path, json_path]:
+                    if os.path.exists(path): os.remove(path)
+                return jsonify({"success": True, "message": "刪除成功"})
+            return jsonify({"success": False, "message": "刪除失敗"}), 500
 
-    elif action == "edit":
-        with fitz.open(pdf_path) as doc:
-            width, height = doc[0].rect.width, doc[0].rect.height
-            has_toc = len(doc.get_toc()) > 0
+        elif action == "edit":
+            if not os.path.exists(pdf_path):
+                execute_query("DELETE FROM Documents WHERE DocID = ? AND User_ID = ?", (doc_id, user_id))
+                return jsonify({"success": False, "message": "PDF檔案遺失，自動清理紀錄，請重新上傳檔案"}), 404
 
-        mods = {}
-        if os.path.exists(json_path):
-            with open(json_path, "r", encoding="utf-8") as jf:
-                mods = json.load(jf)
+            with fitz.open(pdf_path) as doc:
+                width, height = doc[0].rect.width, doc[0].rect.height
+                has_toc = len(doc.get_toc()) > 0
 
-        return jsonify({
-            "success": True,
-            "data": {
-                "doc_id": doc_id,
-                "pdf_name": doc_info['StorageName'],
-                "original_name": doc_info['OriginalName'],
-                "total_pages": doc_info['Pages'],
-                "width": width,
-                "height": height,
-                "mods": mods,
-                "has_toc": has_toc
-            }
-        })
-    return jsonify({"success": False, "message": "error"}), 400
+            mods = {}
+            if os.path.exists(json_path):
+                try:
+                    with open(json_path, "r", encoding="utf-8") as jf:
+                        content = jf.read().strip()
+                        if content:
+                            mods = json.loads(content)
+                except Exception:
+                    pass
+
+            return jsonify({
+                "success": True,
+                "data": {
+                    "doc_id": doc_id,
+                    "pdf_name": doc_info['StorageName'],
+                    "original_name": doc_info['OriginalName'],
+                    "total_pages": doc_info['Pages'],
+                    "width": width,
+                    "height": height,
+                    "mods": mods,
+                    "has_toc": has_toc
+                }
+            })
+            
+        return jsonify({"success": False, "message": "未知的操作指令"}), 400
+        
+    except Exception as e:
+        print(f"doc_tool Error: {e}")
+        return jsonify({"success": False, "message": f"伺服器錯誤: {str(e)}"}), 500
+
 
 @app.route('/docVersion', methods=['GET', 'POST'])
 def docVersion():
@@ -236,8 +259,7 @@ def doc_mapping():
     is_success = 1 if not result_df.empty else 0
     diff_pages_str = ",".join(map(str, diff_pages)) if diff_pages else ""
 
-    sql = """INSERT INTO MappingRecord (OldDocID, NewDocID, ResultName, Creator, Status, IsPublish, DiffPages, DiffPdfName) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"""
+    sql = """INSERT INTO MappingRecord (OldDocID, NewDocID, ResultName, Creator, Status, IsPublish, DiffPages, DiffPdfName) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"""
     params = (
         old_id,
         new_id,
@@ -342,15 +364,6 @@ def mapping_action():
             with open(file_path, "r", encoding="utf-8") as f:
                 return f.read()
         return "找不到 CSV", 404
-
-
-# @app.route("/move")
-# @login_required
-# def move_page():
-#     return render_template("move.html")
-
-
-# notes.html 用的比對紀錄
 
 @app.route("/notes", methods=["GET"])
 @login_required
@@ -476,76 +489,7 @@ def migrate_pdf_api():
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
-
-# @app.route("/annotation/migrate", methods=["POST"])
-# def migrate_annotation():
-#     try:
-
-#         # 使用者上傳的 XFDF
-#         xfdf = request.files["xfdf"]
-#         mapping_id = request.form.get("mapping_id")
-
-#         if not mapping_id:
-#             return jsonify({"status": "error", "message": "未選擇版本比對紀錄"})
-
-#         # 從資料庫取對應的舊版、新版 PDF 與 mapping CSV
-#         sql = """
-#         SELECT 
-#             DocVersion_Old.FileName AS old_file, 
-#             DocVersion_New.FileName AS new_file, 
-#             MappingRecord.ResultName AS csv_file
-#         FROM MappingRecord
-#         LEFT JOIN DocVersion AS DocVersion_Old ON MappingRecord.OldDocID = DocVersion_Old.ID
-#         LEFT JOIN DocVersion AS DocVersion_New ON MappingRecord.NewDocID = DocVersion_New.ID
-#         WHERE MappingRecord.RecordID = ?
-#         """
-#         row = fetch_all(sql, (mapping_id,))
-#         if not row:
-#             return jsonify({"status": "error", "message": "找不到比對紀錄"})
-
-#         row = row[0]
-
-#         old_pdf_path = os.path.join(VERSION_Folder, row['old_file'])
-#         new_pdf_path = os.path.join(VERSION_Folder, row['new_file'])
-#         mapping_csv_path = os.path.join(Mapping_Folder, row['csv_file'])
-
-#         # 原始檔名
-#         original_name = xfdf.filename
-
-#         # 拆檔名與副檔名
-#         name, ext = os.path.splitext(original_name)
-
-#         # 新檔名：加上 _轉移
-#         new_filename = f"{name}_轉移{ext}"
-
-#         # 存使用者上傳檔
-#         xfdf_path = os.path.join(PDF_xfdf_Folder, original_name)
-#         xfdf.save(xfdf_path)
-
-#         # 轉移後輸出檔
-#         output = os.path.join(PDF_xfdf_Folder, new_filename)
-
-#         # 呼叫轉移函式
-#         migrate_all_to_xfdf(
-#             old_pdf_path,
-#             new_pdf_path,
-#             xfdf_path,
-#             output,
-#             mapping_csv_path
-#         )
-
-#         return jsonify({
-#         "status": "success",
-#         "filename": new_filename})
-
-#     except Exception as e:
-#         print("ERROR:", e)
-#         return jsonify({
-#             "status": "error",
-#             "message": str(e)
-#         })
-
-        
+  
 @app.route("/annotation/migrate_existing_json", methods=["POST"])
 def migrate_existing_json():
     try:
@@ -644,5 +588,6 @@ def notes_tool():
     return jsonify({"success": False, "message": "無效操作"}), 400
       
 if __name__ == "__main__":
-    app.run(debug=True,host="0.0.0.0",port=5001)
+    app.run(debug=True,host="0.0.0.0",port=51000)
+    # app.run(host='0.0.0.0', port=80, debug=True)
     # app.run(debug=True,host="0.0.0.0",port=51000,ssl_context=('server.crt', 'server.key'))

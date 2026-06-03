@@ -17,7 +17,7 @@
                 <form id="MappingForm" onsubmit="event.preventDefault(); runMapping();">
                     <div class="row g-3 align-items-end">
                         <div class="col-md-5">
-                            <label class="form-label fw-bold ">選擇舊版文件</label>
+                            <label class="form-label">選擇舊版文件</label>
                             <select class="form-select" name="old_pdf_id" required>
                                 <option value="" selected disabled>請選擇檔案...</option>
                                 {% for pdf in files %}
@@ -27,7 +27,7 @@
                         </div>
 
                         <div class="col-md-5">
-                            <label class="form-label fw-bold text-primary">選擇新版文件</label>
+                            <label class="form-label text-primary">選擇新版文件</label>
                             <select class="form-select" name="new_pdf_id" required>
                                 <option value="" selected disabled>請選擇檔案...</option>
                                 {% for pdf in files %}
@@ -45,7 +45,7 @@
         </div>
         {% endif %}
 
-        <div class="card border-0 shadow-sm rounded-3">
+        <div class="card shadow-sm rounded-3">
             <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
                 <h5 class="mb-0 text-secondary">版本比對紀錄</h5>
                 <form method="GET" action="/mapping" class="d-flex align-items-center m-0 gap-2">
@@ -90,9 +90,9 @@
                                 </td>
                                 <td class="text-center">
                                     {% if row.Status %}
-                                        <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-10 fw-normal">成功</span>
+                                        <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-10 fw-normal">success</span>
                                     {% else %}
-                                        <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-10 fw-normal">失敗</span>
+                                        <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-10 fw-normal">error</span>
                                     {% endif %}
                                 </td>
 

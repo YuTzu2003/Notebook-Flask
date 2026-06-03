@@ -14,17 +14,17 @@
             <div class="row align-items-center g-4">
                 <div class="col-lg-7">
                     <div class="badge bg-primary bg-opacity-10 text-primary px-3 py-1 rounded-pill mb-3 fw-bold small">
-                        專為醫療手冊更新優化
+                        專為醫療癌症登記手冊更新優化
                     </div>
-                    <h2 class="fw-bold text-dark mb-2">智慧型 PDF 筆記轉移與製作</h2>
+                    <h2 class="fw-bold text-dark mb-2">PDF 筆記轉移與製作</h2>
                     <p class="text-muted mb-4 pe-lg-5 small">
-                        專為「癌登手冊」版本更新設計。自動識別文件變動，將您的筆記精準遷移至新版，並支援**線上書籤與筆記製作**，讓心得完美同步。
+                        專為「癌登手冊」版本更新設計。<br> 自動識別文件變動，將您的筆記遷移至新版，並支援線上書籤與筆記製作。
                     </p>
                     <div class="row g-3">
                         <div class="col-md-4 col-sm-6">
                             <div class="d-flex align-items-center gap-2">
                                 <i class="bi bi-arrow-repeat text-primary"></i>
-                                <span class="small fw-bold">精準轉移</span>
+                                <span class="small fw-bold">筆記轉移</span>
                             </div>
                         </div>
                         <div class="col-md-4 col-sm-6">
@@ -43,9 +43,7 @@
                 </div>
                 <div class="col-lg-5">
                     <div class="usage-steps-card card p-3 border-0 shadow-sm">
-                        <h6 class="fw-bold mb-3 d-flex align-items-center">
-                            <i class="bi bi-list-check me-2 text-primary"></i> 快速開始指南
-                        </h6>
+                        <h6 class="fw-bold mb-3 d-flex align-items-center">快速開始指南</h6>
                         <div class="steps-timeline small">
                             <div class="step-item d-flex mb-3">
                                 <div class="step-num">01</div>
@@ -88,7 +86,7 @@
         <div class="row g-4" id="file-grid">
             {% for doc in documents %}
             <div class="col-lg-3 col-md-4 col-sm-6 doc-item">
-                <div class="doc-card card border-0 h-100 shadow-sm" onclick="doc_tool('edit', '{{ doc.DocID }}', event)">
+                <div class="doc-card card h-100" onclick="doc_tool('edit', '{{ doc.DocID }}', event)">
                     <div class="card-img-placeholder">
                         <i class="bi bi-file-earmark-pdf display-1 text-danger opacity-75"></i>
                     </div>

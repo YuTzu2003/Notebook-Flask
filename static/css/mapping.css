@@ -27,8 +27,8 @@
 
 .table thead th { 
     font-weight: 600;
-    color: #64748b;
-    background-color: #f8fafc;
+    color: #475569;
+    background-color: #f1f5f9;
     border-bottom: 1px solid #e2e8f0;
     font-size: 0.85rem;
     padding: 1rem 1.5rem;
@@ -37,7 +37,7 @@
 .table tbody td {
     vertical-align: middle;
     padding: 1rem 1.5rem;
-    color: #334155;
+    color: #000000;
     border-bottom: 1px solid #f1f5f9;
 }
 
