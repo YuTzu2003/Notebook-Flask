@@ -8,34 +8,40 @@
 }
 
 /* 網站介紹樣式 */
-.feature-tag {
-    background: #e0f2fe;
-    color: #0369a1;
-    padding: 0.5rem 1rem;
-    border-radius: 50rem;
-    font-size: 0.85rem;
-    font-weight: 500;
+.hero-section {
+    padding: 2rem 0;
 }
 
-.step-number {
-    width: 28px;
-    height: 28px;
-    background: #0067b8;
-    color: white;
-    border-radius: 50%;
+.step-num {
+    width: 32px;
+    height: 32px;
+    background: #eff6ff;
+    color: #2563eb;
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: bold;
-    font-size: 0.8rem;
-    margin-right: 15px;
+    font-weight: 800;
+    font-size: 0.85rem;
     flex-shrink: 0;
+}
+
+.icon-box {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .usage-steps-card {
     background: #ffffff;
     border: 1px solid #f1f5f9 !important;
-    border-radius: 20px !important;
+    border-radius: 24px !important;
+}
+
+.steps-timeline {
+    position: relative;
 }
 
 .upload-zone {

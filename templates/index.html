@@ -1,56 +1,63 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF做筆記</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/index.css"> 
-    <link rel="icon" href="/static/logo.ico" type="image/x-icon"/>
-</head>
-<body>
-    {% include 'navbar.html' %}
+{% extends "base.html" %}
 
-    <div class="container" style="margin-top: 90px;">
+{% block title %}首頁 - PDF做筆記{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="/static/css/index.css">
+{% endblock %}
+
+{% block content %}
+    <div class="container" style="margin-top: 80px;">
         
-        <!-- 網站介紹與使用說明區 -->
-        <div class="intro-section animate-fade-in mb-5">
-            <div class="row align-items-center">
-                <div class="col-lg-6">
-                    <h2 class="fw-bold text-dark mb-3">PDF 筆記轉移與內容比對工具</h2>
-                    <p class="text-muted lead mb-4">
-                        專為癌登手冊更新設計。透過智慧型文字比對技術，協助您將舊版 PDF 的筆記精準轉移至新版，並自動標記內容變動，讓您的研究心得完美同步。
+        <!-- 核心功能介紹區：縮小版 -->
+        <div class="hero-section mb-5">
+            <div class="row align-items-center g-4">
+                <div class="col-lg-7">
+                    <div class="badge bg-primary bg-opacity-10 text-primary px-3 py-1 rounded-pill mb-3 fw-bold small">
+                        專為醫療手冊更新優化
+                    </div>
+                    <h2 class="fw-bold text-dark mb-2">智慧型 PDF 筆記轉移與製作</h2>
+                    <p class="text-muted mb-4 pe-lg-5 small">
+                        專為「癌登手冊」版本更新設計。自動識別文件變動，將您的筆記精準遷移至新版，並支援**線上書籤與筆記製作**，讓心得完美同步。
                     </p>
-                    <div class="d-flex gap-3 mb-4">
-                        <div class="feature-tag"><i class="bi bi-check-circle-fill me-2"></i>精準座標校正</div>
-                        <div class="feature-tag"><i class="bi bi-check-circle-fill me-2"></i>自動內容差異標註</div>
-                        <div class="feature-tag"><i class="bi bi-check-circle-fill me-2"></i>書籤自動生成</div>
+                    <div class="row g-3">
+                        <div class="col-md-4 col-sm-6">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="bi bi-arrow-repeat text-primary"></i>
+                                <span class="small fw-bold">精準轉移</span>
+                            </div>
+                        </div>
+                        <div class="col-md-4 col-sm-6">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="bi bi-search text-success"></i>
+                                <span class="small fw-bold">內容比對</span>
+                            </div>
+                        </div>
+                        <div class="col-md-4 col-sm-6">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="bi bi-pencil-square text-info"></i>
+                                <span class="small fw-bold">線上筆記製作</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <div class="col-lg-6">
-                    <div class="usage-steps-card card p-4 border-0 shadow-sm">
-                        <h5 class="fw-bold mb-4"><i class="bi bi-info-circle me-2 text-primary"></i>使用流程說明</h5>
-                        <div class="step-item d-flex mb-3">
-                            <div class="step-number">1</div>
-                            <div class="step-content">
-                                <h6 class="fw-bold mb-1">建立文件版本</h6>
-                                <p class="small text-muted mb-0">在「文件版本」頁面上傳新舊版本的參考 PDF。</p>
+                <div class="col-lg-5">
+                    <div class="usage-steps-card card p-3 border-0 shadow-sm">
+                        <h6 class="fw-bold mb-3 d-flex align-items-center">
+                            <i class="bi bi-list-check me-2 text-primary"></i> 快速開始指南
+                        </h6>
+                        <div class="steps-timeline small">
+                            <div class="step-item d-flex mb-3">
+                                <div class="step-num">01</div>
+                                <div class="ms-2">上傳 PDF 版本庫管理</div>
                             </div>
-                        </div>
-                        <div class="step-item d-flex mb-3">
-                            <div class="step-number">2</div>
-                            <div class="step-content">
-                                <h6 class="fw-bold mb-1">設定版本比對</h6>
-                                <p class="small text-muted mb-0">在「版本比對」頁面定義頁碼映射關係，以便系統精確定位。</p>
+                            <div class="step-item d-flex mb-3">
+                                <div class="step-num">02</div>
+                                <div class="ms-2">執行新舊版智慧比對</div>
                             </div>
-                        </div>
-                        <div class="step-item d-flex">
-                            <div class="step-number">3</div>
-                            <div class="step-content">
-                                <h6 class="fw-bold mb-1">執行筆記轉移</h6>
-                                <p class="small text-muted mb-0">在「筆記轉移」頁面上傳您的標註文件，系統將自動導出至新版。</p>
+                            <div class="step-item d-flex">
+                                <div class="step-num">03</div>
+                                <div class="ms-2">生成新版筆記文件</div>
                             </div>
                         </div>
                     </div>
@@ -59,83 +66,38 @@
         </div>
 
         <div class="upload-section animate-fade-in">
-            <h4 class="fw-bold mb-4 text-dark">上傳新文件</h4>
-            
-            <div class="upload-zone" id="dropZone">
-                <i class="bi bi-cloud-arrow-up text-primary mb-3" style="font-size: 3.5rem;"></i>
-                <h5 class="fw-bold text-dark">點擊選擇 PDF 檔案 或 拖曳至此</h5>
-                <input type="file" id="pdfInput" hidden accept=".pdf">
+            <h5 class="fw-bold mb-3"><i class="bi bi-cloud-upload me-2 text-primary"></i>快速上傳文件</h5>
+            <div id="drop-zone" class="upload-zone" onclick="document.getElementById('fileInput').click()">
+                <div class="text-center">
+                    <i class="bi bi-file-earmark-plus display-4 text-primary opacity-50 mb-3"></i>
+                    <p class="mb-1 text-dark fw-medium">將檔案拖曳至此處或點擊上傳</p>
+                    <p class="text-muted small">僅支援 PDF 格式文件</p>
+                </div>
+                <input type="file" id="fileInput" multiple accept=".pdf" style="display: none" onchange="handleFiles(this.files)">
             </div>
         </div>
 
-        <div class="d-flex justify-content-between align-items-center mb-4 px-1">
-            <h4 class="fw-bold m-0 text-dark"><i class="bi bi-clock-history me-2 text-primary"></i>最近的文件</h4>
-            
-            <div class="input-group shadow-sm" style="width: 250px;">
-                <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
-                <input type="text" id="searchInput" class="form-control border-start-0 ps-0" placeholder="搜尋檔名...">
-            </div>
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h5 class="fw-bold m-0 text-secondary">最近上傳的文件</h5>
+            <a href="/docVersion" class="btn btn-sm btn-light border px-3">查看全部 <i class="bi bi-arrow-right ms-1"></i></a>
         </div>
 
-        <div class="row row-cols-1 row-cols-md-2 row-cols-lg-4 g-4" id="docGrid">
-            
-            {% if documents %}
-                {% for doc in documents %}
-                <div class="col doc-item">
-                    <div class="card doc-card h-100">
-                        <div class="card-img-placeholder">
-                            <i class="bi bi-file-earmark-pdf-fill card-icon"></i>
-                            <span class="position-absolute bottom-0 end-0 badge bg-secondary m-2 opacity-75">
-                                {{ doc.Pages }} 頁
-                            </span>
-                        </div>
-                        <div class="card-body d-flex flex-column">
-                            <h5 class="card-title" title="{{ doc.OriginalName }}">{{ doc.OriginalName }}</h5>
-                            
-                            <div class="mt-auto">
-                                <div class="d-flex justify-content-between align-items-end">
-                                    <div class="text-muted small">
-                                        <i class="bi bi-calendar3 me-1"></i> 
-                                        {% if doc.UploadTime %}
-                                            {{ doc.UploadTime.strftime('%Y/%m/%d %H:%M') }}
-                                        {% else %}
-                                            --/--/--/--/--
-                                        {% endif %}
-                                    </div>
-                                </div>
-                                <div class="text-secondary mt-2" style="font-size: 0.7rem; letter-spacing: 0.5px;">
-                                    ID: {{ doc.DocID[:12] }}...
-                                </div>
-                                <div class="d-flex gap-2 mt-3">
-                                    <button class="btn btn-outline-primary btn-sm flex-fill" onclick="doc_tool('edit', '{{ doc.DocID }}', event)">
-                                        <i class="bi bi-pencil-square me-1"></i>編輯
-                                    </button>
-                                    <button class="btn btn-outline-danger btn-sm flex-fill" onclick="doc_tool('delete', '{{ doc.DocID }}', event)">
-                                        <i class="bi bi-trash me-1"></i>刪除
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                {% endfor %}
-            {% else %}
-                <div class="col-12">
-                    <div class="text-center py-5 bg-white rounded-3 shadow-sm">
-                        <i class="bi bi-inbox text-secondary" style="font-size: 3rem;"></i>
-                        <p class="text-muted mt-3">尚無文件紀錄</p>
-                    </div>
-                </div>
-            {% endif %}
+        <div class="row g-4" id="file-grid">
+            <!-- 檔案會在這裡由 JavaScript 動態生成 -->
         </div>
     </div>
 
-    <div id="loadingOverlay" class="spinner-overlay">
-        <div class="spinner-border text-primary mb-3" style="width: 3.5rem; height: 3.5rem;" role="status"></div>
-        <h5 class="text-dark fw-bold" id="loadingText">正在處理中...</h5>
-        <p class="text-secondary small">正在讀取檔案與標註紀錄</p>
+    <div id="spinner-overlay" class="spinner-overlay">
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
+        <p class="mt-3 text-secondary small">正在上傳檔案...</p>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <div id="loading-overlay" class="spinner-overlay">
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
+        <p class="mt-3 text-secondary small">正在讀取檔案與標註紀錄</p>
+    </div>
+{% endblock %}
+
+{% block extra_js %}
     <script src="/static/js/index.js"></script>
-</body>
-</html>
+{% endblock %}

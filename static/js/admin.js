@@ -1,4 +1,11 @@
-const userModal = new bootstrap.Modal(document.getElementById('userModal'));
+let userModal;
+
+document.addEventListener('DOMContentLoaded', function() {
+    const modalElem = document.getElementById('userModal');
+    if (modalElem) {
+        userModal = new bootstrap.Modal(modalElem);
+    }
+});
 
 function editUser(btnElement) {
     const userData = JSON.parse(btnElement.getAttribute('data-user'));
