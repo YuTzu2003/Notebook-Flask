@@ -13,7 +13,7 @@
 
 <body>
     {% include 'navbar.html' %}
-    <div class="container" style="margin-top: 90px;">
+    <div class="container-xl" style="margin-top: 90px;">
         {% if session.Position == 'Admin' or session.Position == 'CTR'%}
         <div class="card border-0 shadow-sm rounded-3 mb-4">
             <div class="card-body p-4">
@@ -65,46 +65,46 @@
                     <table class="table table-hover align-middle mb-0 table-custom">
                         <thead>
                             <tr>
-                                <th>檔名</th>
-                                <th>版本</th>
-                                <th>頁碼/Size</th> 
-                                <th>作者/上傳者</th>
-                                <th>上傳時間</th>
-                                <th class="text-end pe-4"></th>
+                                <th class="ps-4" style="width: 40%;">文件檔名</th>
+                                <th style="width: 10%;">版本</th>
+                                <th style="width: 10%;">規格詳情</th> 
+                                <th style="width: 15%;">作者 / 上傳者</th>
+                                <th style="width: 10%;">發布日期</th>
+                                <th class="text-end pe-4" style="width: 15%;">操作</th>
                             </tr>
                         </thead>
 
                         <tbody>
                             {% for doc in documents %}
                             <tr>
-                                <td class="filename">
+                                <td class="ps-4">
                                     <div class="d-flex align-items-center">
-                                        <i class="far fa-file-pdf text-danger me-2 fs-5 opacity-75"></i>
-                                        <span class="fw-bold text-dark">{{ doc.FileName }}</span>
+                                        <i class="bi bi-file-earmark-pdf text-danger me-2"></i>
+                                        <span class="text-dark fw-bold">{{ doc.FileName }}</span>
                                     </div>
                                 </td>
                                 
                                 <td>
-                                    <span class="badge bg-success-subtle text-success border border-secondary border-opacity-25 fw-normal">{{ doc.Version }}</span>
+                                    <span class="badge bg-light text-dark border fw-normal">{{ doc.Version }}</span>
                                 </td>
                                 
                                 <td>
                                     <div class="small text-dark">{{ doc.Pages }} 頁</div>
-                                    <div class="small text-muted" style="font-size: 0.8rem;">{{ (doc.Size / 1024) | round(1) }} KB</div>
+                                    <div class="small text-muted">{{ (doc.Size / 1024) | round(1) }} KB</div>
                                 </td>
                                 
                                 <td>
                                     <div class="d-flex flex-column">
                                         <span class="small fw-bold text-dark">{{ doc.Author }}</span>
-                                        <span class="small text-muted" style="font-size: 0.75rem;">by {{ doc.Name }}</span>
+                                        <span class="small text-muted" style="font-size: 0.75rem;">{{ doc.Name }}</span>
                                     </div>
                                 </td>
                                 
-                                <td class="text-muted small font-monospace">{{ doc.UploadTime.strftime('%Y-%m-%d') }}</td>
+                                <td class="text-muted small">{{ doc.UploadTime.strftime('%Y-%m-%d') }}</td>
 
                                 <td class="text-end pe-4">
-                                    <div class="d-flex align-items-center justify-content-end gap-2">                     
-                                        <a href="/docVersion_tool/download/{{ doc.ID }}" class="btn btn-sm btn-outline-dark">下載</a>
+                                    <div class="d-flex align-items-center justify-content-end gap-2 text-nowrap">                     
+                                        <a href="/docVersion_tool/download/{{ doc.ID }}" class="btn btn-sm btn-outline-success">下載</a>
                                         <a href="/docVersion_tool/preview/{{ doc.ID }}" target="_blank" class="btn btn-sm btn-outline-secondary">預覽</a>
                                         {% if session.Position == 'Admin' or session.Position == 'CTR'%}
                                         <button type="button" class="btn btn-sm btn-outline-primary" 
@@ -115,7 +115,7 @@
                                                 data-version="{{ doc.Version }}"
                                                 data-author="{{ doc.Author }}">編輯
                                         </button>
-                                        <form action="/docVersion_tool/delete/{{ doc.ID }}" method="POST" onsubmit="confirmDelete(event, this);" class="d-flex m-0">
+                                        <form action="/docVersion_tool/delete/{{ doc.ID }}" method="POST" onsubmit="confirmDelete(event, this);" class="d-inline m-0">
                                             <button type="submit" class="btn btn-sm btn-outline-danger">刪除</button>
                                         </form>
                                         {% endif %}

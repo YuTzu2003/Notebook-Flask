@@ -1,3 +1,4 @@
+/* 使用者管理頁面 */
 .table thead th {
     background-color: #f9fafb;
     color: #4b5563;
@@ -7,11 +8,51 @@
     border-bottom: 1px solid #e5e7eb;
     padding: 0.75rem 1rem;
 }
+
 .table tbody td {
     padding: 0.85rem 1rem;
     border-bottom: 1px solid #f3f4f6;
     vertical-align: middle;
 }
-.table-hover tbody tr:hover {
-    background-color: #f9fafb;
+
+.user-avatar-sm {
+    width: 38px;
+    height: 38px;
+    background-color: #e2e8f0;
+    color: #475569;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.user-row {
+    transition: all 0.2s ease;
+}
+
+.user-row:hover {
+    background-color: #f8fafc !important;
+}
+
+.badge {
+    letter-spacing: 0.5px;
+}
+
+/* 模態框優化 */
+.modal-content {
+    border-radius: 20px;
+}
+
+.form-control, .form-select {
+    border-radius: 10px;
+    padding: 0.6rem 1rem;
+    border-color: #e2e8f0;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
 }

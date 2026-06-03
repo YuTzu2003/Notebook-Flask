@@ -11,7 +11,7 @@
 <body>
     {% include 'navbar.html' %}
 
-    <div class="container" style="margin-top: 90px;">
+    <div class="container-xl" style="margin-top: 90px;">
         <div class="card border-0 shadow-sm rounded-3 mb-4">
             <div class="card-body p-4">
                 <h5 class="fw-bold mb-1">PDF筆記轉移</h5>
@@ -62,10 +62,10 @@
                     <table class="table table-hover align-middle mb-0">
                         <thead class="bg-light">
                             <tr>
-                                <th class="ps-4">參考基準版本</th>
-                                <th>含有筆記的舊PDF名稱</th>
-                                <th>轉移時間</th>
-                                <th class="text-end pe-4" style="width: 20%;"></th>
+                                <th class="ps-4" style="width: 25%;">對應比對版本</th>
+                                <th style="width: 45%;">含有筆記的原始文件</th>
+                                <th style="width: 15%;">轉移日期</th>
+                                <th class="text-end pe-4" style="width: 15%;">操作</th>
                             </tr>
                         </thead>
 
@@ -73,27 +73,25 @@
                             {% for row in history %}
                             <tr>
                                 <td class="ps-4">
-                                    <span class="badge bg-success-subtle text-success border border-secondary border-opacity-25 fw-normal">
-                                        {{ row.OldV }} → {{ row.NewV }}
+                                    <span class="badge bg-light text-dark border fw-normal">
+                                        v{{ row.OldV }} → v{{ row.NewV }}
                                     </span>
                                 </td>
                                 
                                 <td class="filename">
                                     <div class="d-flex align-items-center">
-                                        <i class="far fa-file-pdf text-danger me-2 fs-5 opacity-75"></i>
-                                        <span class="fw-bold text-dark">{{ row.SourceFileName }}</span>
+                                        <i class="bi bi-file-earmark-pdf text-danger me-2"></i>
+                                        <span class="text-dark fw-bold">{{ row.SourceFileName }}</span>
                                     </div>
                                 </td>
 
                                 <td>
-                                    <div class="d-flex align-items-center gap-2">
-                                        <span class="text-muted small font-monospace">{{ row.CreateTime.strftime('%Y-%m-%d') }}</span>
-                                    </div>
+                                    <span class="text-muted small">{{ row.CreateTime.strftime('%Y-%m-%d') }}</span>
                                 </td>
 
                                 <td class="text-end pe-4">
-                                    <div class="d-flex align-items-center justify-content-end gap-2">
-                                        <a href="/download_pdf/{{ row.ResultName }}" class="btn btn-sm btn-outline-dark">下載</a>
+                                    <div class="d-flex align-items-center justify-content-end gap-2 text-nowrap">
+                                        <a href="/download_pdf/{{ row.ResultName }}" class="btn btn-sm btn-outline-success">下載</a>
                                         <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteNote('{{ row.TransferID }}')">刪除</button>
                                     </div>
                                 </td>

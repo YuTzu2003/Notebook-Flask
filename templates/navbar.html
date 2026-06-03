@@ -5,24 +5,25 @@
                 <img src="/static/logo.png"alt="logo" style="height: 40px;">PDF做筆記
             </h5>
         </a>
+        
+        <button class="navbar-toggler border-0 shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
         <div class="collapse navbar-collapse" id="navbarNav">
-            <ul class="navbar-nav mx-auto fw-bold small">
-                <!-- <li class="nav-item">
-                    <a class="nav-link {{'active' if request.path.startswith('/move') else ''}}" href="/move">筆記轉移</a>
-                </li>   -->
+            <ul class="navbar-nav mx-auto fw-medium small">
                 <li class="nav-item">
-                    <a class="nav-link {{'active' if request.path.startswith('/docVersion') else ''}}" href="/docVersion">文件版本
-                    </a>
+                    <a class="nav-link {{'active' if request.path.startswith('/docVersion') else ''}}" href="/docVersion" data-text="文件版本">文件版本</a>
                 </li>  
                 <li class="nav-item">
-                    <a class="nav-link {{'active' if request.path.startswith('/mapping') else ''}}" href="/mapping">版本比對</a>
+                    <a class="nav-link {{'active' if request.path.startswith('/mapping') else ''}}" href="/mapping" data-text="版本比對">版本比對</a>
                 </li>        
                 <li class="nav-item">
-                    <a class="nav-link {{'active' if request.path.startswith('/notes') else ''}}" href="/notes">筆記轉移</a>
+                    <a class="nav-link {{'active' if request.path.startswith('/notes') else ''}}" href="/notes" data-text="筆記轉移">筆記轉移</a>
                 </li>  
                 {% if session.Position == 'Admin' %}                
                 <li class="nav-item">
-                    <a class="nav-link {{'active' if request.endpoint == 'auth.admin_users' else ''}}" href="{{ url_for('auth.admin_users') }}">使用者管理</a>
+                    <a class="nav-link {{'active' if request.endpoint == 'auth.admin_users' else ''}}" href="{{ url_for('auth.admin_users') }}" data-text="使用者管理">使用者管理</a>
                 </li>
                 {% endif %}             
             </ul>
@@ -45,7 +46,21 @@
                 </a></li>
             </ul>
         </div>
-    </div>
-</nav>
+        </div>
+        </nav>
 
-<link rel="stylesheet" href="/static/css/navbar.css"> 
+        <footer class="footer fixed-bottom py-2 bg-white border-top shadow-sm">
+        <div class="container text-center">
+        <span class="text-muted small">
+            &copy; 2026 人工智慧暨巨量資料實驗室 &amp; 雲林台大醫院腫瘤醫學部
+        </span>
+        </div>
+        </footer>
+
+        <style>
+        body { padding-bottom: 60px !important; } /* 為固定頁尾預留空間 */
+        .footer { z-index: 1030; }
+        </style>
+
+        <link rel="stylesheet" href="/static/css/navbar.css"> 
+ 

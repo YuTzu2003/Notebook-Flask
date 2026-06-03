@@ -43,46 +43,67 @@
             </div>
         </div>
 
-        <div class="card rounded-3">
+        <div class="card rounded-3 border-0 shadow-sm">
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-hover mb-0">
+                    <table class="table table-hover align-middle mb-0">
                         <thead class="bg-light">
                             <tr>
-                                <th class="ps-4">編號</th>
-                                <th>姓名</th>
-                                <th>職位</th>
-                                <th>地點</th>
-                                <th>登入時間</th>
-                                <th></th>
+                                <th class="ps-4 py-3 text-muted small fw-bold">使用者編號</th>
+                                <th class="py-3 text-muted small fw-bold">基本資訊</th>
+                                <th class="py-3 text-muted small fw-bold">權限職位</th>
+                                <th class="py-3 text-muted small fw-bold">服務地點</th>
+                                <th class="py-3 text-muted small fw-bold">最後登入</th>
+                                <th class="text-end pe-4 py-3"></th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for user in users %}
-                            <tr>
-                                <td class="ps-4 fw-medium text-secondary">{{ user.UserID }}</td>
-                                <td class="fw-bold">{{ user.Name }}</td>
+                            <tr class="user-row">
+                                <td class="ps-4">
+                                    <span class="font-monospace text-secondary bg-light px-2 py-1 rounded small">{{ user.UserID }}</span>
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="user-avatar-sm me-3">
+                                            {{ user.Name[0] }}
+                                        </div>
+                                        <span class="fw-bold text-dark">{{ user.Name }}</span>
+                                    </div>
+                                </td>
                                 <td>
                                     {% if user.Position == 'Admin' %}
-                                        <span class="badge bg-danger rounded-1">Admin</span>
+                                        <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 fw-medium px-3">系統管理員</span>
+                                    {% elif user.Position == 'Doctor' %}
+                                        <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 fw-medium px-3">主治醫師</span>
                                     {% else %}
-                                        <span class="badge bg-secondary rounded-1">{{ user.Position }}</span>
+                                        <span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25 fw-medium px-3">{{ user.Position }}</span>
                                     {% endif %}
                                 </td>
-                                <td>{{ user.Location if user.Location else '-' }}</td>
-                                <td class="text-muted small">
-                                    {{ user.Last_login.strftime('%Y-%m-%d %H:%M') if user.Last_login else '-' }}
+                                <td>
+                                    <div class="d-flex align-items-center text-muted">
+                                        <i class="bi bi-geo-alt me-2 small"></i>
+                                        <span>{{ user.Location if user.Location else '未設定' }}</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="text-muted small">
+                                        <i class="bi bi-clock-history me-1"></i>
+                                        {{ user.Last_login.strftime('%Y-%m-%d %H:%M') if user.Last_login else '尚未登入' }}
+                                    </div>
                                 </td>
                                 <td class="text-end pe-4">
-                                    <div class="btn-group" role="group">
+                                    <div class="d-flex justify-content-end gap-2 text-nowrap">
                                         <button type="button" 
-                                                class="btn btn-sm btn-outline-secondary" 
+                                                class="btn btn-sm btn-light border" 
                                                 data-user='{{ user | tojson | safe }}'
-                                                onclick="editUser(this)">編輯
+                                                onclick="editUser(this)">
+                                            <i class="bi bi-pencil me-1"></i>編輯
                                         </button>
                                         <button type="button" 
-                                                class="btn btn-sm btn-outline-danger ms-2" 
-                                                onclick="deleteUser('{{ user.ID }}', '{{ user.UserID }}')">刪除
+                                                class="btn btn-sm btn-outline-danger" 
+                                                onclick="deleteUser('{{ user.ID }}', '{{ user.UserID }}')">
+                                            <i class="bi bi-trash"></i>
                                         </button>
                                     </div>
                                 </td>

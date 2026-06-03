@@ -16,11 +16,19 @@ async function runMigrate() {
             Swal.fire({
                 icon: "success",
                 title: "轉移完成",
-                text: "筆記已轉移成功！請至下方的紀錄區下載檔案。",
-                confirmButtonText: "確定"
-            }).then(() => {
-
-                location.reload();
+                text: "筆記已轉移成功！您可以立即下載檔案，或稍後在下方的紀錄區下載。",
+                showCancelButton: true,
+                confirmButtonText: "立即下載",
+                cancelButtonText: "確定",
+                confirmButtonColor: "#2563eb", // 改用新的藍色主題
+                cancelButtonColor: "#64748b"   // 灰色
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    window.location.href = `/download_pdf/${data.filename}`;
+                    setTimeout(() => { location.reload(); }, 1500); // 稍微加長一點時間讓下載開始
+                } else {
+                    location.reload();
+                }
             });
         } else {
             Swal.fire({ icon: "error", title: "轉移失敗", text: data.message });
