@@ -6,7 +6,7 @@ import statistics
 import os
 from rapidfuzz import fuzz, process
 
-MANUAL_ADJUST_X = -4.0  
+MANUAL_ADJUST_X = -4.0
 MANUAL_ADJUST_Y = 0.0
 
 
@@ -26,9 +26,17 @@ def get_word_score(w, annot_center, annot_rect):
         
     return dist
 
+def filtered_median(values, max_deviation=15):
+    """F: 過濾離群值後取中位數，避免少數錯誤錨點干擾結果"""
+    if not values:
+        return 0
+    med = statistics.median(values)
+    filtered = [v for v in values if abs(v - med) < max_deviation]
+    return statistics.median(filtered) if filtered else med
+
 def find_precise_offset(page_old, page_new, old_rect, processed_offsets):
     for ref_rect, ref_dx, ref_dy in processed_offsets:
-        if abs(old_rect.x0 - ref_rect.x0) < 30 and abs(old_rect.y0 - ref_rect.y0) < 150:
+        if abs(old_rect.x0 - ref_rect.x0) < 30 and abs(old_rect.y0 - ref_rect.y0) < 120:
             return ref_dx, ref_dy, "群組"
 
     words_old = page_old.get_text("words")
@@ -52,10 +60,13 @@ def find_precise_offset(page_old, page_new, old_rect, processed_offsets):
         cw_rect_old = fitz.Rect(cw[:4])
         hits = page_new.search_for(text)
         if (not hits or len(hits) > 3) and len(text) >= 3:
-            matches = process.extract(text, new_texts, scorer=fuzz.ratio, limit=2)
+            matches = process.extract(text, new_texts, scorer=fuzz.ratio, limit=3)
             for m_text, score, idx in matches:
                 if score > 85:
-                    hits.append(fitz.Rect(words_new[idx][:4]))
+                    nw_rect = fitz.Rect(words_new[idx][:4])
+                    # D: 空間鄰近篩選 — 只接受垂直距離在頁面高度 50% 以內的匹配
+                    if abs(nw_rect.y0 - cw_rect_old.y0) < page_new.rect.height * 0.5:
+                        hits.append(nw_rect)
 
         if hits:
             best_hit = min(hits, key=lambda h: abs(h.y0 - cw_rect_old.y0) + abs(h.x0 - cw_rect_old.x0))
@@ -66,11 +77,100 @@ def find_precise_offset(page_old, page_new, old_rect, processed_offsets):
                 offsets_y.append(dy)
 
     if len(offsets_x) >= 2:
-        return statistics.median(offsets_x), statistics.median(offsets_y), "精準AI"
+        return filtered_median(offsets_x), filtered_median(offsets_y), "精準AI"
     elif len(offsets_x) == 1:
         return offsets_x[0], offsets_y[0], "弱AI"
 
     return 0, 0, "兜底零位移"
+
+
+def find_text_based_position(page_old, page_new, old_rect_f):
+    # 1. 提取舊頁面中被標記覆蓋的文字
+    old_words = page_old.get_text("words")
+    covered = []
+    for w in old_words:
+        w_rect = fitz.Rect(w[:4])
+        if not old_rect_f.intersects(w_rect):
+            continue
+        overlap = old_rect_f & w_rect
+        if overlap.get_area() / max(w_rect.get_area(), 1) > 0.3:
+            covered.append(w)
+
+    if not covered:
+        return None
+
+    # 依位置排序（同行按 y 分組，行內按 x 排序）
+    covered.sort(key=lambda w: (round(w[1] / 5) * 5, w[0]))
+    covered_texts = [w[4].strip() for w in covered if w[4].strip()]
+
+    if len(covered_texts) < 1:
+        return None
+
+    # 2. 在新頁面中尋找相同的文字序列
+    new_words = page_new.get_text("words")
+    if not new_words:
+        return None
+
+    new_texts = [w[4].strip() for w in new_words]
+    n = len(covered_texts)
+    best_start = -1
+    best_score = 0.0
+
+    for start in range(len(new_texts) - n + 1):
+        score = 0.0
+        for j in range(n):
+            if covered_texts[j] == new_texts[start + j]:
+                score += 1.0
+            elif len(covered_texts[j]) >= 2 and fuzz.ratio(covered_texts[j], new_texts[start + j]) > 80:
+                score += 0.8
+        normalized = score / n
+        if normalized > best_score:
+            best_score = normalized
+            best_start = start
+
+    if best_start < 0 or best_score < 0.6:
+        return None
+
+    # 3. 用匹配到的文字位置建立新的 QuadPoints——精確貼合文字邊界
+    matched = new_words[best_start:best_start + n]
+    new_h = page_new.rect.height
+
+    # 按行分組
+    lines = []
+    current_line = [matched[0]]
+    for w in matched[1:]:
+        if abs(w[1] - current_line[-1][1]) < 5:  # y 差距 < 5pt 視為同行
+            current_line.append(w)
+        else:
+            lines.append(current_line)
+            current_line = [w]
+    lines.append(current_line)
+
+    quads = []
+    all_rects = []
+
+    for line_words in lines:
+        x0 = min(w[0] for w in line_words)
+        y0 = min(w[1] for w in line_words)
+        x1 = max(w[2] for w in line_words)
+        y1 = max(w[3] for w in line_words)
+        all_rects.append(fitz.Rect(x0, y0, x1, y1))
+
+        # QuadPoints: PDF 座標（原點在左下角）
+        quads.extend([
+            x0, new_h - y0,   # top-left
+            x1, new_h - y0,   # top-right
+            x0, new_h - y1,   # bottom-left
+            x1, new_h - y1,   # bottom-right
+        ])
+
+    # 計算包圍矩形
+    union_rect = all_rects[0]
+    for rect in all_rects[1:]:
+        union_rect |= rect
+
+    pdf_rect = [union_rect.x0, new_h - union_rect.y1, union_rect.x1, new_h - union_rect.y0]
+    return quads, pdf_rect
 
 
 def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str=""):
@@ -111,6 +211,20 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             r = [float(x) for x in annot['/Rect']]
             old_h = p_old_f.rect.height
             old_rect_f = fitz.Rect(r[0], old_h - r[3], r[2], old_h - r[1])
+
+            # 文字標記型註記：優先用文字錨定精準定位
+            if subtype in ['/Highlight', '/Underline', '/StrikeOut']:
+                text_result = find_text_based_position(p_old_f, p_new_f, old_rect_f)
+                if text_result:
+                    new_quads, new_rect = text_result
+                    annot.Rect = pdfrw.PdfArray([pdfrw.PdfObject(f"{x:.4f}") for x in new_rect])
+                    annot[PN('QuadPoints')] = pdfrw.PdfArray([pdfrw.PdfObject(f"{x:.4f}") for x in new_quads])
+                    # 移除舊的外觀串流，讓 PDF 閱讀器根據新的 QuadPoints 重新繪製
+                    if annot.get('/AP'):
+                        del annot['/AP']
+                    p_new_p.Annots.append(annot)
+                    continue  # 成功，跳過後續的偏移計算
+
             text_dx, text_dy, status = find_precise_offset(p_old_f, p_new_f, old_rect_f, processed_offsets_map[old_idx])
             dx = text_dx + page_origin_dx + MANUAL_ADJUST_X
             dy = text_dy + page_origin_dy + MANUAL_ADJUST_Y
