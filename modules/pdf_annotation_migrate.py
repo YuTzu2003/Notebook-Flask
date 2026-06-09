@@ -6,7 +6,7 @@ import statistics
 import os
 from rapidfuzz import fuzz, process
 
-MANUAL_ADJUST_X = -4.0
+MANUAL_ADJUST_X = 0.0
 MANUAL_ADJUST_Y = 0.0
 
 
@@ -300,7 +300,9 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                         toc.append([1, f"新增內容 (新 p.{p})", p])
 
                 final_doc.set_toc(toc)
-                final_doc.saveIncr()
+                tmp_pdf = output_pdf + ".tmp.pdf"
+                final_doc.save(tmp_pdf)
                 final_doc.close()
+                os.replace(tmp_pdf, output_pdf)
         except Exception as e:
             print(f"添加差異書籤失敗: {e}")
