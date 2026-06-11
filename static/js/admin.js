@@ -77,7 +77,7 @@ function saveUser() {
     const saveBtn = document.querySelector('#userModal .btn-dark');
     const originalText = saveBtn.innerText;
     saveBtn.disabled = true;
-    saveBtn.innerText = "處理中...";
+    saveBtn.innerText = "process...";
 
     fetch('/admin/manage_user', {
         method: 'POST',

@@ -1,17 +1,45 @@
 from flask import Blueprint, render_template, request, jsonify, session, send_from_directory, current_app
 import os
 import uuid
+import shutil
 from modules.auth import login_required
 from modules.db import execute_query, fetch_all
 from modules.pdf_annotation_migrate import migrate_all_to_pdf
+import threading
+import time
+import os
+
+def get_note_dir(transfer_id):
+    if transfer_id.startswith("note"):
+        return os.path.join("static/note", transfer_id)
+    return os.path.join("static/note", f"note{transfer_id}")
+
+def run_migrate_background(app, transfer_id, old_pdf_path, new_pdf_path, csv_mapping, output_pdf, diff_pages_str, output_filename):
+    with app.app_context():
+        try:
+            migrate_all_to_pdf(
+                old_pdf=old_pdf_path,           
+                new_pdf=new_pdf_path,     
+                csv_mapping=csv_mapping,    
+                output_pdf=output_pdf,
+                diff_pages_str=diff_pages_str
+            )
+            
+            time.sleep(1.5)
+            sql = "UPDATE Hospital.dbo.NoteTransferHistory SET ResultName = ? WHERE TransferID = ?"
+            execute_query(sql, (output_filename, transfer_id))
+            
+        except Exception as e:
+            print("Background Migrate Error:", e)
+            from modules.db import execute_query
+            sql = "UPDATE Hospital.dbo.NoteTransferHistory SET ResultName = 'ERROR' WHERE TransferID = ?"
+            execute_query(sql, (transfer_id,))
 
 bp_notes = Blueprint('bp_notes', __name__)
 
 VERSION_Folder = 'static/docVersion'
 Mapping_Folder = "static/docMapResult"
 Note_Folder = 'static/note'
-Note_Upload = 'static/note/upload'
-Note_Transfer = 'static/note/Transfer'
 
 @bp_notes.route("/notes", methods=["GET"])
 @login_required
@@ -28,13 +56,11 @@ def notes_page():
     order_col = config['col']
     order_dir = config['dir']
 
-    sql_mapping = """
-        SELECT M.RecordID, V1.Version AS OldVersion, V2.Version AS NewVersion 
-        FROM MappingRecord M
-        JOIN DocVersion V1 ON M.OldDocID = V1.ID
-        JOIN DocVersion V2 ON M.NewDocID = V2.ID
-        WHERE M.IsPublish = 1
-    """
+    sql_mapping = """SELECT M.RecordID, V1.Version AS OldVersion, V2.Version AS NewVersion 
+                    FROM MappingRecord M
+                    JOIN DocVersion V1 ON M.OldDocID = V1.ID
+                    JOIN DocVersion V2 ON M.NewDocID = V2.ID
+                    WHERE M.IsPublish = 1"""
     mapping_history = fetch_all(sql_mapping)
     
     sql_history = f"""
@@ -63,15 +89,8 @@ def migrate_pdf_api():
         if not mapping_id:
             return jsonify({"status": "error", "message": "未選擇版本比對紀錄"})
 
-        sql = """
-        SELECT 
-            MappingRecord.NewDocID,
-            MappingRecord.DiffPages AS diff_pages
-        FROM MappingRecord
-        WHERE MappingRecord.RecordID = ?
-        """
-
-        TransferID = str(uuid.uuid4())
+        sql = """SELECT MappingRecord.NewDocID,MappingRecord.DiffPages AS diff_pagesFROM MappingRecordWHERE MappingRecord.RecordID = ?"""
+        TransferID = "note" + uuid.uuid4().hex[:8]
         row = fetch_all(sql, (mapping_id,))[0]
 
         # 根據要求，使用乾淨的新版 PDF 作為底本
@@ -79,31 +98,25 @@ def migrate_pdf_api():
         mapping_csv_path = os.path.join(Mapping_Folder, mapping_id, f"{mapping_id}.csv")
         diff_pages_str = row.get('diff_pages', '')
 
-        os.makedirs(Note_Folder, exist_ok=True)
-        os.makedirs(Note_Upload, exist_ok=True)
-        os.makedirs(Note_Transfer, exist_ok=True)
-        user_pdf_path = f"{Note_Upload}/{TransferID}.pdf"
+        note_dir = get_note_dir(TransferID)
+        os.makedirs(note_dir, exist_ok=True)
+        
+        original_filename = pdf_with_notes.filename
+        user_pdf_path = os.path.join(note_dir, original_filename)
         pdf_with_notes.save(user_pdf_path)
 
-        output_filename =  f"{TransferID}_Move.pdf"
-        output_path = f"{Note_Transfer}/{output_filename}"
+        output_filename = f"Move_{original_filename}"
+        output_path = os.path.join(note_dir, output_filename)
 
-        migrate_all_to_pdf(
-            old_pdf=user_pdf_path,           
-            new_pdf=target_new_pdf_path,     
-            csv_mapping=mapping_csv_path,    
-            output_pdf=output_path,
-            diff_pages_str=diff_pages_str
-        )
+        # 先寫入資料庫，標記為 PROCESSING
+        sql_insert = """INSERT INTO Hospital.dbo.NoteTransferHistory (TransferID, UserID, MappingID, SourceFileName, ResultName) VALUES (?, ?, ?, ?, ?)"""
+        execute_query(sql_insert, (TransferID, user_id, mapping_id, pdf_with_notes.filename, 'PROCESSING'))
 
-        user_id = session.get("ID") 
-        sql_insert = """
-            INSERT INTO Hospital.dbo.NoteTransferHistory (TransferID, UserID, MappingID, SourceFileName,ResultName)
-            VALUES (?, ?, ?, ?, ?)
-        """
-        execute_query(sql_insert, (TransferID, user_id, mapping_id, pdf_with_notes.filename, output_filename))
+        app_obj = current_app._get_current_object()
+        thread = threading.Thread(target=run_migrate_background, args=(app_obj, TransferID, user_pdf_path, target_new_pdf_path, mapping_csv_path, output_path, diff_pages_str, output_filename))
+        thread.start()
 
-        return jsonify({"status": "success", "filename": output_filename})
+        return jsonify({"status": "success", "message": "筆記轉移已在背景開始執行！"})
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
@@ -117,25 +130,16 @@ def migrate_existing_json():
         if not json_filename or not mapping_id:
             return jsonify({"status": "error", "message": "缺少資料"})
 
-        sql = """
-        SELECT 
-            MappingRecord.OldDocID, 
-            MappingRecord.NewDocID
-        FROM MappingRecord
-        WHERE MappingRecord.RecordID = ?
-        """
+        sql = """SELECT MappingRecord.OldDocID, MappingRecord.NewDocID FROM MappingRecord WHERE MappingRecord.RecordID = ?"""
         row = fetch_all(sql, (mapping_id,))
         if not row:
             return jsonify({"status": "error", "message": "找不到比對紀錄"})
 
         row = row[0]
-
         old_pdf_path = os.path.join(VERSION_Folder, f"{row['OldDocID']}.pdf")
         new_pdf_path = os.path.join(VERSION_Folder, f"{row['NewDocID']}.pdf")
         mapping_csv_path = os.path.join(Mapping_Folder, mapping_id, f"{mapping_id}.csv")
-
         json_path = os.path.join(current_app.root_path, "static", "annotation", json_filename)
-
         name, ext = os.path.splitext(json_filename)
         new_json_name = f"{name}_轉移{ext}"
         output_json_path = os.path.join(current_app.root_path, "static", "annotation", new_json_name)
@@ -163,14 +167,18 @@ def migrate_existing_json():
 @bp_notes.route('/download_pdf/<filename>')
 @login_required 
 def download_pdf(filename):
-    sql = """SELECT SourceFileName FROM Hospital.dbo.NoteTransferHistory WHERE ResultName = ?"""
+    sql = """SELECT SourceFileName, TransferID FROM Hospital.dbo.NoteTransferHistory WHERE ResultName = ?"""
     result = fetch_all(sql, (filename,))
 
     if result:
         source_file_name = result[0]['SourceFileName']
+        transfer_id = result[0]['TransferID']
         base_name = os.path.splitext(source_file_name)[0]
-
-    return send_from_directory(Note_Transfer,filename, as_attachment=True,download_name=f"{base_name}_Move.pdf")
+        note_dir = get_note_dir(transfer_id)
+        download_name = filename if filename.startswith("Move_") else f"{base_name}_Move.pdf"
+        
+        return send_from_directory(note_dir, filename, as_attachment=True, download_name=download_name)
+    return "File not found", 404
 
 
 @bp_notes.route("/notes_tool", methods=["POST"])
@@ -188,16 +196,21 @@ def notes_tool():
         if res:
             if execute_query("DELETE FROM NoteTransferHistory WHERE TransferID = ? AND UserID = ?", (transfer_id, user_id)):
                 
-                pdf_upload = f"{Note_Upload}/{res[0]['TransferID']}.pdf"
-                if os.path.exists(pdf_upload):
-                    os.remove(pdf_upload)
-                
-                pdf_Transfer = f"{Note_Transfer}/{res[0]['TransferID']}_Move.pdf"
-                if os.path.exists(pdf_Transfer):
-                    os.remove(pdf_Transfer)
+                note_dir = get_note_dir(transfer_id)
+                if os.path.exists(note_dir):
+                    shutil.rmtree(note_dir)
 
                 return jsonify({"success": True, "message": "刪除成功"})
         
         return jsonify({"success": False, "message": "刪除失敗"}), 500
     
     return jsonify({"success": False, "message": "無效操作"}), 400
+
+@bp_notes.route("/notes/status/<transfer_id>", methods=["GET"])
+@login_required
+def notes_status(transfer_id):
+    sql = "SELECT ResultName FROM Hospital.dbo.NoteTransferHistory WHERE TransferID = ?"
+    result = fetch_all(sql, (transfer_id,))
+    if result:
+        return jsonify({"success": True, "ResultName": result[0]["ResultName"]})
+    return jsonify({"success": False}), 404

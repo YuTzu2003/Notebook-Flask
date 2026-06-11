@@ -2,7 +2,14 @@ async function runMigrate() {
     let form = document.getElementById("migrateForm");
     let formData = new FormData(form);
     
-    $("body").loading({message: "筆記轉移中..."});
+    // 檢查必填
+    if(!form.checkValidity()){
+        form.reportValidity();
+        return;
+    }
+
+    const submitBtn = document.getElementById("migrateSubmitBtn");
+    submitBtn.disabled = true;
 
     try {
         let res = await fetch("/annotation/migrate_pdf", {
@@ -10,34 +17,79 @@ async function runMigrate() {
             body: formData
         });
         let data = await res.json();
-        $("body").loading("stop");
 
         if(data.status === "success"){
-            Swal.fire({
-                icon: "success",
-                title: "轉移完成",
-                text: "筆記已轉移成功！您可以立即下載檔案，或稍後在下方的紀錄區下載。",
-                showCancelButton: true,
-                confirmButtonText: "立即下載",
-                cancelButtonText: "確定",
-                confirmButtonColor: "#2563eb", // 改用新的藍色主題
-                cancelButtonColor: "#64748b"   // 灰色
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    window.location.href = `/download_pdf/${data.filename}`;
-                    setTimeout(() => { location.reload(); }, 1500); // 稍微加長一點時間讓下載開始
-                } else {
-                    location.reload();
-                }
-            });
+            // 重新整理以顯示新的一筆 PROCESSING 紀錄
+            location.reload();
         } else {
             Swal.fire({ icon: "error", title: "轉移失敗", text: data.message });
+            submitBtn.disabled = false;
         }
     } catch(e) {
-        $("body").loading("stop");
         Swal.fire({ icon: "error", title: "系統錯誤", text: "請檢查伺服器連線" });
+        submitBtn.disabled = false;
     }
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+    const processingBadges = document.querySelectorAll('.processing-badge');
+    
+    processingBadges.forEach(badge => {
+        const transferId = badge.getAttribute('data-transfer-id');
+        if (!transferId) return;
+
+        const interval = setInterval(async () => {
+            try {
+                let res = await fetch(`/notes/status/${transferId}`);
+                let data = await res.json();
+
+                if (data.success && data.ResultName !== 'PROCESSING') {
+                    clearInterval(interval);
+                    
+                    const isSuccess = data.ResultName !== 'ERROR';
+                    
+                    const container = document.getElementById(`status-container-${transferId}`);
+                    if (container) {
+                        container.innerHTML = isSuccess ? 
+                            `<span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-10 fw-normal">success</span>` : 
+                            `<span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-10 fw-normal">error</span>`;
+                    }
+                    
+                    const downloadBtn = document.getElementById(`download-btn-${transferId}`);
+                    if (downloadBtn && isSuccess) {
+                        downloadBtn.classList.remove('disabled');
+                        downloadBtn.href = `/download_pdf/${data.ResultName}`;
+                    }
+
+                    const deleteBtn = document.getElementById(`delete-btn-${transferId}`);
+                    if (deleteBtn) deleteBtn.classList.remove('disabled');
+
+                    // Show Notification and Reload
+                    if (isSuccess) {
+                        if (typeof addNotif === 'function') {
+                            addNotif('success', `一筆筆記轉移已成功完成`);
+                        }
+                        setTimeout(() => location.reload(), 500);
+                    } else {
+                        Swal.fire({
+                            icon: 'error',
+                            title: '轉移失敗',
+                            text: '背景轉移時發生錯誤或無法解析此文件。',
+                            confirmButtonColor: '#0dcaf0'
+                        }).then(() => {
+                            if (typeof addNotif === 'function') {
+                                addNotif('error', `一筆筆記轉移失敗`);
+                            }
+                            location.reload();
+                        });
+                    }
+                }
+            } catch (e) {
+                console.error("Status Polling Error for ID:", transferId, e);
+            }
+        }, 3000); // 每 3 秒輪詢一次
+    });
+});
 
 async function deleteNote(transferId) {
     const result = await Swal.fire({

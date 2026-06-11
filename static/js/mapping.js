@@ -17,7 +17,6 @@ async function runMapping() {
     const originalText = submitBtn.innerHTML;
     
     // Set UI to loading state
-    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>處理中...';
     submitBtn.disabled = true;
 
     try {
@@ -45,7 +44,7 @@ async function runMapping() {
  * Helper to reset the submit button state.
  */
 function resetButton(btn, originalText) {
-    btn.innerHTML = originalText;
+    btn.disabled = false;
     btn.disabled = false;
 }
 
@@ -183,19 +182,14 @@ document.addEventListener("DOMContentLoaded", function() {
                         }
                     }
                     
-                    // 4. Show Notification
+                    // 4. Show Notification and Reload
                     if (data.Status) {
-                        Swal.fire({
-                            toast: true,
-                            position: 'top-end',
-                            icon: 'success',
-                            title: '比對已完成',
-                            showConfirmButton: false,
-                            timer: 3000,
-                            timerProgressBar: true
-                        }).then(() => {
-                            location.reload();
-                        });
+                        // 使用上方導覽列的通知鈴鐺，並寫入 localStorage
+                        if (typeof addNotif === 'function') {
+                            addNotif('success', `文件版本比對已成功完成`);
+                        }
+                        // 稍微延遲後重新整理
+                        setTimeout(() => location.reload(), 500);
                     } else {
                         // Error should be a prominent alert, not just a toast, to show information
                         let errorMsg = data.DiffPages === 'ERROR' ? '背景比對時發生系統錯誤，請聯絡管理員。' : '比對過程遭遇問題或無法解析此文件。';
@@ -205,6 +199,9 @@ document.addEventListener("DOMContentLoaded", function() {
                             text: errorMsg,
                             confirmButtonColor: '#0dcaf0'
                         }).then(() => {
+                            if (typeof addNotif === 'function') {
+                                addNotif('error', `文件版本比對失敗`);
+                            }
                             location.reload();
                         });
                     }

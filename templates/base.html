@@ -52,13 +52,29 @@
                 </ul>
             </div>
 
-            <div class="dropdown">
-                <button class="btn btn-light dropdown-toggle d-flex align-items-center border-0 bg-transparent" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                    <div class="rounded-circle user-avatar-circle text-white d-flex justify-content-center align-items-center me-2 shadow-sm">
-                        {{ session.Name[0] if session.Name else 'U' }}
-                    </div>
-                    <span class="d-none d-md-block fw-medium">{{ session.Name }}</span>
-                </button>
+            <div class="d-flex align-items-center">
+                <div class="dropdown me-3">
+                    <a class="text-secondary position-relative text-decoration-none" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false" id="notifDropdown">
+                        <i class="bi bi-bell-fill fs-5"></i>
+                        <span class="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle d-none" id="notifBadge">
+                            <span class="visually-hidden">New alerts</span>
+                        </span>
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end shadow border-0 mt-2 p-0" style="width: 280px; max-height: 350px; overflow-y: auto;" id="notifList">
+                        <li><h6 class="dropdown-header border-bottom py-2 d-flex justify-content-between align-items-center">系統通知 <button class="btn btn-sm btn-link text-decoration-none p-0 text-muted" onclick="clearNotifs()">清除全部</button></h6></li>
+                        <div id="notifItems">
+                            <li class="text-center text-muted small py-3" id="noNotifText">目前沒有新通知</li>
+                        </div>
+                    </ul>
+                </div>
+
+                <div class="dropdown">
+                    <button class="btn btn-light dropdown-toggle d-flex align-items-center border-0 bg-transparent" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <div class="rounded-circle user-avatar-circle text-white d-flex justify-content-center align-items-center me-2 shadow-sm">
+                            {{ session.Name[0] if session.Name else 'U' }}
+                        </div>
+                        <span class="d-none d-md-block fw-medium">{{ session.Name }}</span>
+                    </button>
                 <ul class="dropdown-menu dropdown-menu-end shadow border-0 mt-2">
                     <li><h6 class="dropdown-header text-uppercase small text-muted">使用者資訊</h6></li>
                     <li><span class="dropdown-item-text small">編號: {{ session.UserID }}</span></li>
@@ -70,6 +86,7 @@
                         </a>
                     </li>
                 </ul>
+                </div>
             </div>
         </div>
     </nav>
@@ -79,7 +96,7 @@
     <footer class="footer fixed-bottom py-2 bg-white border-top shadow-sm">
         <div class="container text-center">
             <span class="text-muted small">
-                &copy; 2026 人工智慧暨巨量資料實驗室 &amp; 雲林台大醫院腫瘤醫學部
+                &copy; 2026 國立虎尾科技大學．人工智慧暨巨量資料實驗室 &amp; 雲林台大醫院腫瘤醫學部
             </span>
         </div>
     </footer>
@@ -92,11 +109,63 @@
 
     {% block extra_js %}{% endblock %}
 
+    <script>
+        function loadNotifs() {
+            let notifs = JSON.parse(localStorage.getItem('sys_notifications') || '[]');
+            const badge = document.getElementById('notifBadge');
+            const items = document.getElementById('notifItems');
+            
+            if (notifs.length > 0) {
+                if (badge) badge.classList.remove('d-none');
+                if (items) {
+                    items.innerHTML = '';
+                    [...notifs].reverse().forEach(n => {
+                        const icon = n.status === 'success' 
+                            ? '<i class="bi bi-check-circle-fill text-success fs-5"></i>' 
+                            : '<i class="bi bi-x-circle-fill text-danger fs-5"></i>';
+                        items.innerHTML += `
+                            <li class="dropdown-item text-wrap border-bottom py-2" style="font-size: 0.85rem;">
+                                <div class="d-flex align-items-start gap-2">
+                                    ${icon}
+                                    <div>
+                                        <div class="fw-bold">${n.title}</div>
+                                        <div class="text-muted" style="font-size: 0.75rem;">${n.time}</div>
+                                    </div>
+                                </div>
+                            </li>
+                        `;
+                    });
+                }
+            } else {
+                if (badge) badge.classList.add('d-none');
+                if (items) items.innerHTML = '<li class="text-center text-muted small py-3" id="noNotifText">目前沒有新通知</li>';
+            }
+        }
+        
+        function clearNotifs() {
+            localStorage.removeItem('sys_notifications');
+            loadNotifs();
+        }
+        
+        function addNotif(status, title) {
+            let notifs = JSON.parse(localStorage.getItem('sys_notifications') || '[]');
+            notifs.push({
+                status: status,
+                title: title,
+                time: new Date().toLocaleTimeString('zh-TW', { hour12: false })
+            });
+            // 保留最近 10 筆
+            if (notifs.length > 10) notifs = notifs.slice(-10);
+            localStorage.setItem('sys_notifications', JSON.stringify(notifs));
+            loadNotifs();
+        }
+        
+        document.addEventListener("DOMContentLoaded", loadNotifs);
+    </script>
+
     <style>
         body { padding-bottom: 70px !important; }
         .footer { z-index: 1030; }
-        
-        /* 防止 Modal 打開時畫面與 Navbar 跳動 */
         body { padding-right: 0 !important; overflow-y: scroll !important; }
         .fixed-top { padding-right: 0 !important; }
         .fixed-bottom { padding-right: 0 !important; }

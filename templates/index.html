@@ -1,15 +1,11 @@
 {% extends "base.html" %}
-
 {% block title %}首頁 - PDF做筆記{% endblock %}
-
 {% block extra_css %}
     <link rel="stylesheet" href="/static/css/index.css">
 {% endblock %}
 
 {% block content %}
     <div class="container" style="margin-top: 80px;">
-        
-        <!-- 核心功能介紹區：縮小版 -->
         <div class="hero-section mb-5">
             <div class="row align-items-center g-4">
                 <div class="col-lg-7">
@@ -117,7 +113,7 @@
 
     <div id="loadingOverlay" class="spinner-overlay">
         <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
-        <p id="loadingText" class="mt-3 text-secondary small fw-bold">處理中...</p>
+        <p id="loadingText" class="mt-3 text-secondary small fw-bold">processing...</p>
     </div>
 {% endblock %}
 

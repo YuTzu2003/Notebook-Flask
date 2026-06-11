@@ -101,7 +101,7 @@
                                             {% if row.DiffPages == 'PROCESSING' %}
                                                 <span id="status-badge-{{ row.RecordID }}" data-id="{{ row.RecordID }}" class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-10 fw-normal d-flex align-items-center gap-1 processing-badge">
                                                     <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="width: 0.7rem; height: 0.7rem;"></span>
-                                                    處理中...
+                                                    processing...
                                                 </span>
                                             {% elif row.Status %}
                                                 <span id="status-badge-{{ row.RecordID }}" class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-10 fw-normal">success</span>
