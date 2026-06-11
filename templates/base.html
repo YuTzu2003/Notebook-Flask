@@ -19,7 +19,7 @@
 <body>
 
     <nav class="navbar navbar-expand-lg navbar-light fixed-top">
-        <div class="container">
+        <div class="container-fluid px-md-5">
             <a class="navbar-brand d-flex align-items-center gap-2" href="/">
                 <h5 class="m-0 fw-bold text-dark">
                     <img src="/static/logo.png" alt="logo" style="height: 40px;"> PDF做筆記
@@ -105,6 +105,11 @@
     <style>
         body { padding-bottom: 70px !important; }
         .footer { z-index: 1030; }
+        
+        /* 防止 Modal 打開時畫面與 Navbar 跳動 */
+        body { padding-right: 0 !important; overflow-y: scroll !important; }
+        .fixed-top { padding-right: 0 !important; }
+        .fixed-bottom { padding-right: 0 !important; }
     </style>
 
 </body>

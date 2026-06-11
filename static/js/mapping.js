@@ -1,33 +1,20 @@
-/**
- * 執行版本比對 (AJAX 模式)
- */
 async function runMapping() {
     let form = document.getElementById("MappingForm");
     let formData = new FormData(form);
-    
-    // 1. 顯示轉圈圈
     $("body").loading({message: "版本比對中..."});
 
     try {
-        // 2. 發送請求到後端
-        let res = await fetch("/mapping/doc_mapping", {
-            method: "POST", 
-            body: formData
-        });
+        let res = await fetch("/mapping/doc_mapping", {method: "POST", body: formData});
         let data = await res.json();
-        
-        // 3. 關閉轉圈圈
         $("body").loading("stop");
 
         if(data.status === "success"){
-            // 4. 顯示成功彈窗
             Swal.fire({
                 icon: "success",
                 title: "比對完成",
                 text: data.message,
                 confirmButtonText: "確定"
             }).then(() => {
-                // 5. 點擊確定後才重新整理，讓新紀錄出現在下方表格
                 location.reload();
             });
         } else {
@@ -35,13 +22,10 @@ async function runMapping() {
         }
     } catch(e) {
         $("body").loading("stop");
-        Swal.fire({ icon: "error", title: "系統錯誤", text: "伺服器運算逾時或連線中斷" });
+        Swal.fire({ icon: "error", title: "系統錯誤", text: "系統逾時或連線中斷" });
     }
 }
 
-/**
- * 1. 刪除比對紀錄
- */
 async function deleteMappingRecord(recordId) {
     const result = await Swal.fire({
         title: '確定要刪除嗎？',
@@ -75,9 +59,6 @@ async function deleteMappingRecord(recordId) {
     }
 }
 
-/**
- * 2. 切換發布狀態
- */
 async function toggleMappingPublish(recordId, checkbox) {
     const isPublish = checkbox.checked ? 1 : 0;
     try {
@@ -90,6 +71,19 @@ async function toggleMappingPublish(recordId, checkbox) {
         if (!data.success) {
             Swal.fire('錯誤', '更新失敗', 'error');
             checkbox.checked = !checkbox.checked;
+        } else {
+            const label = document.getElementById("publish-label-" + recordId);
+            if (label) {
+                if (isPublish) {
+                    label.textContent = "發布中";
+                    label.classList.remove("text-secondary");
+                    label.classList.add("text-success");
+                } else {
+                    label.textContent = "未發布";
+                    label.classList.remove("text-success");
+                    label.classList.add("text-secondary");
+                }
+            }
         }
     } catch (e) {
         checkbox.checked = !checkbox.checked;

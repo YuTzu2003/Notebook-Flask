@@ -65,13 +65,9 @@ def migrate_pdf_api():
 
         sql = """
         SELECT 
-            DocVersion_Old.FileName AS old_file, 
-            DocVersion_New.FileName AS new_file, 
-            MappingRecord.ResultName AS csv_file,
+            MappingRecord.NewDocID,
             MappingRecord.DiffPages AS diff_pages
         FROM MappingRecord
-        LEFT JOIN DocVersion AS DocVersion_Old ON MappingRecord.OldDocID = DocVersion_Old.ID
-        LEFT JOIN DocVersion AS DocVersion_New ON MappingRecord.NewDocID = DocVersion_New.ID
         WHERE MappingRecord.RecordID = ?
         """
 
@@ -79,8 +75,8 @@ def migrate_pdf_api():
         row = fetch_all(sql, (mapping_id,))[0]
 
         # 根據要求，使用乾淨的新版 PDF 作為底本
-        target_new_pdf_path = os.path.join(VERSION_Folder, row['new_file'])
-        mapping_csv_path = os.path.join(Mapping_Folder, row['csv_file'])
+        target_new_pdf_path = os.path.join(VERSION_Folder, f"{row['NewDocID']}.pdf")
+        mapping_csv_path = os.path.join(Mapping_Folder, mapping_id, f"{mapping_id}.csv")
         diff_pages_str = row.get('diff_pages', '')
 
         os.makedirs(Note_Folder, exist_ok=True)
@@ -123,12 +119,9 @@ def migrate_existing_json():
 
         sql = """
         SELECT 
-            DocVersion_Old.FileName AS old_file, 
-            DocVersion_New.FileName AS new_file, 
-            MappingRecord.ResultName AS csv_file
+            MappingRecord.OldDocID, 
+            MappingRecord.NewDocID
         FROM MappingRecord
-        LEFT JOIN DocVersion AS DocVersion_Old ON MappingRecord.OldDocID = DocVersion_Old.ID
-        LEFT JOIN DocVersion AS DocVersion_New ON MappingRecord.NewDocID = DocVersion_New.ID
         WHERE MappingRecord.RecordID = ?
         """
         row = fetch_all(sql, (mapping_id,))
@@ -137,9 +130,9 @@ def migrate_existing_json():
 
         row = row[0]
 
-        old_pdf_path = os.path.join(VERSION_Folder, row['old_file'])
-        new_pdf_path = os.path.join(VERSION_Folder, row['new_file'])
-        mapping_csv_path = os.path.join(Mapping_Folder, row['csv_file'])
+        old_pdf_path = os.path.join(VERSION_Folder, f"{row['OldDocID']}.pdf")
+        new_pdf_path = os.path.join(VERSION_Folder, f"{row['NewDocID']}.pdf")
+        mapping_csv_path = os.path.join(Mapping_Folder, mapping_id, f"{mapping_id}.csv")
 
         json_path = os.path.join(current_app.root_path, "static", "annotation", json_filename)
 

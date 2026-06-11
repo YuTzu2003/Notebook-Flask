@@ -1,7 +1,5 @@
 {% extends "base.html" %}
-
 {% block title %}版本比對 - PDF做筆記{% endblock %}
-
 {% block extra_css %}
     <link rel="stylesheet" href="/static/css/mapping.css">
     <style>
@@ -19,7 +17,7 @@
 {% endblock %}
 
 {% block content %}
-    <div class="container" style="margin-top: 90px;">
+    <div class="container-fluid px-md-5" style="margin-top: 90px;">
         {% if session.Position == 'Admin' or session.Position == 'CTR'%}
         <div class="card border-0 shadow-sm rounded-3 mb-4">
             <div class="card-body p-4">
@@ -63,7 +61,7 @@
                 <form method="GET" action="/mapping" class="d-flex align-items-center m-0 gap-2">
                     <label for="sort_by" class="form-label mb-0 text-muted small">排序方式</label>
                     <select name="sort_by" id="sort_by" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
-                        <option value="UploadTime" {% if current_sort == 'UploadTime' %}selected{% endif %}>上傳時間</option>                  
+                        <option value="CreateTime" {% if current_sort == 'CreateTime' %}selected{% endif %}>執行時間</option>
                     </select>
                 </form>
             </div>
@@ -83,21 +81,21 @@
 
                                 <!-- 中間：主要資訊區塊 -->
                                 <div class="flex-grow-1 overflow-hidden ms-md-2">
-                                    <!-- 第一排：新舊檔名、狀態 -->
-                                    <div class="d-flex align-items-center mb-2 gap-2 flex-wrap">
-                                        <h6 class="fw-bold mb-0 text-dark text-truncate" style="max-width: 40%;" title="{{ row.OldFileName }}">{{ row.OldFileName }}</h6>
-                                        <i class="bi bi-arrow-right text-muted"></i>
-                                        <h6 class="fw-bold mb-0 text-primary text-truncate" style="max-width: 40%;" title="{{ row.NewFileName }}">{{ row.NewFileName }}</h6>
-                                        
-                                        {% if row.Status %}
-                                            <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-10 fw-normal ms-2">success</span>
-                                        {% else %}
-                                            <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-10 fw-normal ms-2">error</span>
-                                        {% endif %}
+                                    <div class="d-flex align-items-center mb-2 gap-2 flex-nowrap">
+                                        <h6 class="fw-bold mb-0 text-dark text-truncate" style="flex: 1 1 auto; max-width: 48%;" title="{{ row.OldFileName }}">{{ row.OldFileName }}</h6>
+                                        <i class="bi bi-arrow-right text-muted flex-shrink-0"></i>
+                                        <h6 class="fw-bold mb-0 text-primary text-truncate" style="flex: 1 1 auto; max-width: 48%;" title="{{ row.NewFileName }}">{{ row.NewFileName }}</h6>
                                     </div>
                                     
-                                    <!-- 第二排：版本、執行時間 -->
-                                    <div class="d-flex flex-wrap gap-4 small text-muted">
+                                    <!-- 第二排：狀態、版本、執行時間 -->
+                                    <div class="d-flex flex-wrap align-items-center gap-4 small text-muted">
+                                        <div>
+                                            {% if row.Status %}
+                                                <span class="badge bg-success border border-success border-opacity-10 fw-normal">success</span>
+                                            {% else %}
+                                                <span class="badge bg-danger border border-danger border-opacity-10 fw-normal">error</span>
+                                            {% endif %}
+                                        </div>
                                         <div>
                                             <span style="font-size: 0.8rem;">比對版本：</span>
                                             <span class="text-dark fw-bold">v{{ row.OldVersion }} → v{{ row.NewVersion }}</span>
@@ -109,11 +107,9 @@
                                     </div>
                                 </div>
 
-                                <!-- Admin Only: 發布開關 -->
                                 {% if session.Position == 'Admin' or session.Position == 'CTR'%}
-                                <div class="d-flex flex-column align-items-center mx-md-3 mt-3 mt-md-0 border-start-md px-md-3">
-                                    <span style="font-size: 0.75rem;" class="text-muted mb-1">發布狀態</span>
-                                    <div class="form-check form-switch m-0 d-flex justify-content-center">
+                                <div class="d-flex align-items-center mx-md-3 mt-3 mt-md-0 border-start-md px-md-3 gap-2">
+                                    <div class="form-check form-switch m-0 d-flex align-items-center">
                                         <input class="form-check-input m-0"
                                                type="checkbox"
                                                role="switch"
@@ -121,22 +117,21 @@
                                                {% if not row.Status %}disabled{% endif %}
                                                onchange="toggleMappingPublish('{{ row.RecordID }}', this)">
                                     </div>
+                                    <span id="publish-label-{{ row.RecordID }}" style="font-size: 0.8rem; white-space: nowrap;" class="mb-0 fw-bold {% if row.IsPublish %}text-success{% else %}text-secondary{% endif %}">
+                                        {% if row.IsPublish %}發布中{% else %}未發布{% endif %}
+                                    </span>
                                 </div>
                                 {% endif %}
 
-                                <!-- 右側：操作按鈕 -->
                                 <div class="d-flex gap-2 ms-md-auto flex-shrink-0 mt-3 mt-md-0 border-start-md ps-md-2">
                                     <button class="btn btn-sm btn-outline-primary px-3"
                                             data-bs-toggle="modal"
                                             data-bs-target="#detailModal_{{ row.RecordID }}">詳細</button>
 
                                     {% if session.Position == 'Admin' or session.Position == 'CTR'%}
-                                    <button type="button" 
-                                            class="btn btn-sm btn-outline-danger px-3" 
-                                            onclick="deleteMappingRecord('{{ row.RecordID }}')">刪除</button>
+                                    <button type="button" class="btn btn-sm btn-outline-danger px-3" onclick="deleteMappingRecord('{{ row.RecordID }}')">刪除</button>
                                     {% endif %}
                                 </div>
-
                             </div>
                         </div>
                     </div>
@@ -168,9 +163,7 @@
                             <div class="p-3 border rounded bg-light h-100">
                                 <h6 class="text-secondary border-bottom pb-2 mb-3 small fw-bold">舊版文件</h6>
                                 <p class="fw-bold text-break mb-2">{{ row.OldFileName }}</p>
-                                <span class="badge bg-secondary">
-                                    版本: v{{ row.OldVersion if row.OldVersion else 'Unknown' }}
-                                </span>
+                                <span class="badge bg-secondary">版本: v{{ row.OldVersion if row.OldVersion else 'Unknown' }}</span>
                             </div>
                         </div>
 
@@ -178,9 +171,7 @@
                             <div class="p-3 border rounded bg-primary bg-opacity-10 h-100">
                                 <h6 class="text-primary border-bottom pb-2 mb-3 small fw-bold">新版文件</h6>
                                 <p class="fw-bold text-break text-primary mb-2">{{ row.NewFileName }}</p>
-                                <span class="badge bg-primary">
-                                    版本: v{{ row.NewVersion if row.NewVersion else 'Unknown' }}
-                                </span>
+                                <span class="badge bg-primary">版本: v{{ row.NewVersion if row.NewVersion else 'Unknown' }}</span>
                             </div>
                         </div>
                     </div>
@@ -207,24 +198,22 @@
                     </div>
                 </div>
 
-                <div class="modal-footer bg-light border-0">
+                <div class="modal-footer bg-light border-0 gap-2">
                     {% if row.Status %}
                     <form method="POST" action="/mapping/action" class="m-0">
                         <input type="hidden" name="action" value="download_diff">
                         <input type="hidden" name="record_id" value="{{ row.RecordID }}">
-                        <button type="submit" class="btn btn-outline-danger px-3">
-                            <i class="bi bi-file-earmark-pdf me-1"></i>下載差異標記 (PDF)
-                        </button>
+                        <button type="submit" class="btn btn-danger px-3">下載差異標記(PDF)</button>
                     </form>
                     <form method="POST" action="/mapping/action" class="m-0">
                         <input type="hidden" name="action" value="download">
                         <input type="hidden" name="record_id" value="{{ row.RecordID }}">
-                        <button type="submit" class="btn btn-success px-4">下載對應表 (CSV)</button>
+                        <button type="submit" class="btn btn-success px-4">下載對應表(CSV)</button>
                     </form>
                     {% else %}
                     <button class="btn btn-success px-4" disabled>無法下載</button>
                     {% endif %}
-                    <button class="btn btn-light px-4 border" data-bs-dismiss="modal">關閉</button>
+                    <button class="btn btn-dark px-4 m-0" data-bs-dismiss="modal">關閉</button>
                 </div>
             </div>
         </div>
