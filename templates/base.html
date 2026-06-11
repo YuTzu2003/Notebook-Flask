@@ -53,6 +53,11 @@
                             <i class="bi bi-people me-2"></i>使用者管理
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {{'active' if request.endpoint == 'auth.admin_logs' else ''}}" href="{{ url_for('auth.admin_logs') }}" data-text="系統日誌">
+                            <i class="bi bi-journal-text me-2"></i>系統日誌
+                        </a>
+                    </li>
                     {% endif %}             
                 </ul>
             </div>

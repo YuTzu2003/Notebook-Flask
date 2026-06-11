@@ -4,6 +4,18 @@
 
 {% block extra_css %}
     <link rel="stylesheet" href="/static/css/mapping.css">
+    <style>
+        .doc-card {
+            border: 1px solid #ced4da !important;
+        }
+        .doc-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.08) !important;
+        }
+        .transition-all {
+            transition: all 0.3s ease;
+        }
+    </style>
 {% endblock %}
 
 {% block content %}
@@ -56,85 +68,85 @@
                 </form>
             </div>
             
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead class="bg-light">
-                            <tr>
-                                <th class="ps-4" style="width: 45%;">文件比對關係 (舊版 → 新版)</th>
-                                <th style="width: 15%;">基準版本</th>
-                                <th style="width: 15%;">執行時間</th>
-                                <th class="text-center" style="width: 10%;">狀態</th>
-                                {% if session.Position == 'Admin' or session.Position == 'CTR'%}
-                                    <th class="text-center" style="width: 10%;">發布</th>
-                                {% endif %}
-                                <th class="text-end pe-4" style="width: 5%;">操作</th> 
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for row in history %}
-                            {% if row.IsPublish != False or session.Position == 'Admin' or session.Position == 'CTR'%}
-                            <tr>
-                                <td class="ps-4">
-                                    <div class="d-flex align-items-center">
-                                        <div class="filename-container fw-bold" title="{{ row.OldFileName }}">{{ row.OldFileName }}</div>
-                                        <i class="bi bi-arrow-right mx-3 text-muted"></i>
-                                        <div class="text-primary filename-container fw-bold" title="{{ row.NewFileName }}">{{ row.NewFileName }}</div>
-                                    </div>
-                                </td>
-                                <td>
-                                    <span class="badge bg-light text-dark border fw-normal">v{{ row.OldVersion }} → v{{ row.NewVersion }}</span>
-                                </td>
-                                <td>
-                                    <span class="text-muted small">{{ row.CreateTime.strftime('%Y-%m-%d') }}</span>
-                                </td>
-                                <td class="text-center">
-                                    {% if row.Status %}
-                                        <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-10 fw-normal">success</span>
-                                    {% else %}
-                                        <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-10 fw-normal">error</span>
-                                    {% endif %}
-                                </td>
+            <div class="card-body p-4 bg-light rounded-bottom">
+                <div class="row g-3">
+                    {% for row in history %}
+                    {% if row.IsPublish != False or session.Position == 'Admin' or session.Position == 'CTR'%}
+                    <div class="col-12">
+                        <div class="card doc-card transition-all shadow-sm rounded-3">
+                            <div class="card-body p-3 p-md-4 d-flex flex-column flex-md-row align-items-md-center gap-3">
+                                
+                                <!-- 左側：圖示 -->
+                                <div class="bg-primary bg-opacity-10 rounded-3 p-2 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 50px; height: 50px;">
+                                    <i class="bi bi-arrow-left-right fs-3 text-primary"></i>
+                                </div>
 
+                                <!-- 中間：主要資訊區塊 -->
+                                <div class="flex-grow-1 overflow-hidden ms-md-2">
+                                    <!-- 第一排：新舊檔名、狀態 -->
+                                    <div class="d-flex align-items-center mb-2 gap-2 flex-wrap">
+                                        <h6 class="fw-bold mb-0 text-dark text-truncate" style="max-width: 40%;" title="{{ row.OldFileName }}">{{ row.OldFileName }}</h6>
+                                        <i class="bi bi-arrow-right text-muted"></i>
+                                        <h6 class="fw-bold mb-0 text-primary text-truncate" style="max-width: 40%;" title="{{ row.NewFileName }}">{{ row.NewFileName }}</h6>
+                                        
+                                        {% if row.Status %}
+                                            <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-10 fw-normal ms-2">success</span>
+                                        {% else %}
+                                            <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-10 fw-normal ms-2">error</span>
+                                        {% endif %}
+                                    </div>
+                                    
+                                    <!-- 第二排：版本、執行時間 -->
+                                    <div class="d-flex flex-wrap gap-4 small text-muted">
+                                        <div>
+                                            <span style="font-size: 0.8rem;">比對版本：</span>
+                                            <span class="text-dark fw-bold">v{{ row.OldVersion }} → v{{ row.NewVersion }}</span>
+                                        </div>
+                                        <div>
+                                            <span style="font-size: 0.8rem;">執行時間：</span>
+                                            <span class="text-dark fw-bold">{{ row.CreateTime.strftime('%Y-%m-%d %H:%M') }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Admin Only: 發布開關 -->
                                 {% if session.Position == 'Admin' or session.Position == 'CTR'%}
-                                <td class="text-center">
-                                    <div class="form-check form-switch d-flex justify-content-center">
-                                        <input class="form-check-input"
+                                <div class="d-flex flex-column align-items-center mx-md-3 mt-3 mt-md-0 border-start-md px-md-3">
+                                    <span style="font-size: 0.75rem;" class="text-muted mb-1">發布狀態</span>
+                                    <div class="form-check form-switch m-0 d-flex justify-content-center">
+                                        <input class="form-check-input m-0"
                                                type="checkbox"
                                                role="switch"
                                                {% if row.IsPublish %}checked{% endif %}
                                                {% if not row.Status %}disabled{% endif %}
                                                onchange="toggleMappingPublish('{{ row.RecordID }}', this)">
                                     </div>
-                                </td>
+                                </div>
                                 {% endif %}
 
-                                <td class="text-end pe-4">
-                                    <div class="d-flex align-items-center justify-content-end gap-2 text-nowrap">
-                                        <button class="btn btn-sm btn-outline-primary"
-                                                data-bs-toggle="modal"
-                                                data-bs-target="#detailModal_{{ row.RecordID }}">
-                                            詳細
-                                        </button>
+                                <!-- 右側：操作按鈕 -->
+                                <div class="d-flex gap-2 ms-md-auto flex-shrink-0 mt-3 mt-md-0 border-start-md ps-md-2">
+                                    <button class="btn btn-sm btn-outline-primary px-3"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#detailModal_{{ row.RecordID }}">詳細</button>
 
-                                        {% if session.Position == 'Admin' or session.Position == 'CTR'%}
-                                        <button type="button" 
-                                                class="btn btn-sm btn-outline-danger" 
-                                                onclick="deleteMappingRecord('{{ row.RecordID }}')">
-                                            刪除
-                                        </button>
-                                        {% endif %}
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endif %}
-                            {% else %}
-                            <tr>
-                                <td colspan="6" class="text-center py-5 text-muted small">目前沒有任何比對紀錄</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                                    {% if session.Position == 'Admin' or session.Position == 'CTR'%}
+                                    <button type="button" 
+                                            class="btn btn-sm btn-outline-danger px-3" 
+                                            onclick="deleteMappingRecord('{{ row.RecordID }}')">刪除</button>
+                                    {% endif %}
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% else %}
+                    <div class="col-12 text-center py-5">
+                        <i class="bi bi-inbox fs-1 text-muted d-block mb-3"></i>
+                        <span class="text-muted small">目前沒有任何比對紀錄</span>
+                    </div>
+                    {% endfor %}
                 </div>
             </div>
         </div>

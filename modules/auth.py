@@ -40,7 +40,7 @@ def login():
             cursor.execute("""UPDATE Users SET Last_login = GETDATE() WHERE ID = ? """, user.ID)
             conn.commit()
             conn.close()
-            return redirect(url_for("index"))
+            return redirect(url_for("bp_index.index"))
 
         conn.close()
         flash("帳號或密碼錯誤")
@@ -60,7 +60,7 @@ def admin_required(func):
     def wrapper(*args, **kwargs):
         if session.get("Position") not in ["Admin"]:
             flash("權限不足")
-            return redirect(url_for("index"))
+            return redirect(url_for("bp_index.index"))
         return func(*args, **kwargs)
     return wrapper
 
@@ -139,3 +139,23 @@ def manage_user():
         cursor.execute(sql, (userid, name, pwd, pos, loc))
         conn.commit()
         return jsonify({"success": True, "message": "Add Successful"})
+
+@auth_bp.route("/admin/logs")
+@login_required
+@admin_required
+def admin_logs():
+    conn = get_conn()
+    cursor = conn.cursor()
+    
+    sql = "SELECT TOP 100 LogID, ErrorCode, ErrorMessage, Traceback, CreatedAt FROM ErrorLogs ORDER BY CreatedAt DESC"
+    
+    try:
+        cursor.execute(sql)
+        columns = [column[0] for column in cursor.description]
+        logs = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    except Exception as e:
+        print("Fetch logs error:", e)
+        logs = []
+        
+    conn.close()
+    return render_template("admin_logs.html", logs=logs)

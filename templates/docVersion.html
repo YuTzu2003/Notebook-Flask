@@ -4,6 +4,18 @@
 
 {% block extra_css %}
     <link rel="stylesheet" href="/static/css/docVersion.css">
+    <style>
+        .doc-card {
+            border: 1px solid #ced4da !important;
+        }
+        .doc-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.08) !important;
+        }
+        .transition-all {
+            transition: all 0.3s ease;
+        }
+    </style>
 {% endblock %}
 
 {% block content %}
@@ -55,75 +67,72 @@
                 </form>
             </div>
 
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0 table-custom">
-                        <thead>
-                            <tr>
-                                <th class="ps-4" style="width: 30%;">文件檔名</th>
-                                <th style="width: 10%;">版本</th>
-                                <th style="width: 15%;">規格詳情</th> 
-                                <th style="width: 15%;">作者 / 上傳者</th>
-                                <th style="width: 15%;">發布日期</th>
-                                <th class="text-end pe-4" style="width: 15%;">操作</th>
-                            </tr>
-                        </thead>
+            <div class="card-body p-4 bg-light rounded-bottom">
+                <div class="row g-3">
+                    {% for doc in documents %}
+                    <div class="col-12">
+                        <div class="card doc-card transition-all shadow-sm rounded-3">
+                            <div class="card-body p-3 p-md-4 d-flex flex-column flex-md-row align-items-md-center gap-3">
+                                
+                                <!-- 左側：PDF 圖示 -->
+                                <div class="bg-danger bg-opacity-10 rounded-3 p-2 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 50px; height: 50px;">
+                                    <i class="bi bi-file-earmark-pdf fs-3 text-danger"></i>
+                                </div>
 
-                        <tbody>
-                            {% for doc in documents %}
-                            <tr>
-                                <td class="ps-4">
-                                    <div class="d-flex align-items-center filename-container">
-                                        <i class="bi bi-file-earmark-pdf text-danger me-2"></i>
-                                        <span class="text-dark fw-bold" title="{{ doc.FileName }}">{{ doc.FileName }}</span>
+                                <!-- 中間：主要資訊區塊 -->
+                                <div class="flex-grow-1 overflow-hidden ms-md-2">
+                                    <!-- 第一排：檔名、版本、規格 -->
+                                    <div class="d-flex align-items-center mb-2 gap-2 flex-wrap">
+                                        <h6 class="fw-bold mb-0 text-dark text-truncate" style="max-width: 100%;" title="{{ doc.FileName }}">{{ doc.FileName }}</h6>
+                                        <span class="badge bg-warning text-dark border fw-normal px-2 py-1">{{ doc.Version }}</span>
+                                        <small class="text-muted ms-2">{{ doc.Pages }} 頁 • {{ (doc.Size / 1024) | round(1) }} KB</small>
                                     </div>
-                                </td>
-                                
-                                <td>
-                                    <span class="badge bg-light text-dark border fw-normal">{{ doc.Version }}</span>
-                                </td>
-                                
-                                <td>
-                                    <div class="small text-dark">{{ doc.Pages }} 頁</div>
-                                    <div class="small text-muted">{{ (doc.Size / 1024) | round(1) }} KB</div>
-                                </td>
-                                
-                                <td>
-                                    <div class="d-flex flex-column">
-                                        <span class="small fw-bold text-dark">{{ doc.Author }}</span>
-                                        <span class="small text-muted" style="font-size: 0.75rem;">{{ doc.Name }}</span>
+                                    
+                                    <!-- 第二排：作者、上傳者、日期 -->
+                                    <div class="d-flex flex-wrap gap-4 small text-muted">
+                                        <div>
+                                            <span style="font-size: 0.8rem;">作者：</span>
+                                            <span class="text-dark fw-bold">{{ doc.Author }}</span>
+                                        </div>
+                                        <div>
+                                            <span style="font-size: 0.8rem;">上傳者：</span>
+                                            <span class="text-dark fw-bold">{{ doc.Name }}</span>
+                                        </div>
+                                        <div>
+                                            <span style="font-size: 0.8rem;">發布日期：</span>
+                                            <span class="text-dark fw-bold">{{ doc.UploadTime.strftime('%Y-%m-%d') }}</span>
+                                        </div>
                                     </div>
-                                </td>
+                                </div>
                                 
-                                <td class="text-muted small">{{ doc.UploadTime.strftime('%Y-%m-%d') }}</td>
+                                <!-- 右側：操作按鈕 (改回文字、拿掉圖示) -->
+                                <div class="d-flex gap-2 ms-md-auto flex-shrink-0 mt-3 mt-md-0">
+                                    <a href="/docVersion_tool/download/{{ doc.ID }}" class="btn btn-sm btn-outline-success px-3">下載</a>
+                                    <a href="/docVersion_tool/preview/{{ doc.ID }}" target="_blank" class="btn btn-sm btn-outline-secondary px-3">預覽</a>
+                                    {% if session.Position == 'Admin' or session.Position == 'CTR'%}
+                                    <button type="button" class="btn btn-sm btn-outline-primary px-3" 
+                                            data-bs-toggle="modal" 
+                                            data-bs-target="#editModal"
+                                            data-id="{{ doc.ID }}"
+                                            data-filename="{{ doc.FileName }}"
+                                            data-version="{{ doc.Version }}"
+                                            data-author="{{ doc.Author }}">編輯
+                                    </button>
+                                    <form action="/docVersion_tool/delete/{{ doc.ID }}" method="POST" onsubmit="confirmDelete(event, this);" class="m-0">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger px-3">刪除</button>
+                                    </form>
+                                    {% endif %}
+                                </div>
 
-                                <td class="text-end pe-4">
-                                    <div class="d-flex align-items-center justify-content-end gap-2 text-nowrap">                     
-                                        <a href="/docVersion_tool/download/{{ doc.ID }}" class="btn btn-sm btn-outline-success">下載</a>
-                                        <a href="/docVersion_tool/preview/{{ doc.ID }}" target="_blank" class="btn btn-sm btn-outline-secondary">預覽</a>
-                                        {% if session.Position == 'Admin' or session.Position == 'CTR'%}
-                                        <button type="button" class="btn btn-sm btn-outline-primary" 
-                                                data-bs-toggle="modal" 
-                                                data-bs-target="#editModal"
-                                                data-id="{{ doc.ID }}"
-                                                data-filename="{{ doc.FileName }}"
-                                                data-version="{{ doc.Version }}"
-                                                data-author="{{ doc.Author }}">編輯
-                                        </button>
-                                        <form action="/docVersion_tool/delete/{{ doc.ID }}" method="POST" onsubmit="confirmDelete(event, this);" class="d-inline m-0">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger">刪除</button>
-                                        </form>
-                                        {% endif %}
-                                    </div>
-                                </td>
-                            </tr>
-                            {% else %}
-                            <tr>
-                                <td colspan="6" class="text-center py-5 text-muted small">目前尚無任何文件資料</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="col-12 text-center py-5">
+                        <i class="bi bi-inbox fs-1 text-muted d-block mb-3"></i>
+                        <span class="text-muted">目前尚無任何文件資料</span>
+                    </div>
+                    {% endfor %}
                 </div>
             </div>
         </div>
