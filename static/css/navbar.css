@@ -50,30 +50,21 @@ body {
 
 .navbar-nav .nav-link {
     position: relative;
-    padding: 0.75rem 1.25rem !important;
+    padding: 0 0.25rem !important;
+    margin: 0 0.05rem; 
     display: flex;
     align-items: center;
     justify-content: center;
     color: #4b5563 !important;
-    font-weight: 500;
     transition: all 0.2s ease;
 }
 
 @media (min-width: 992px) {
     .navbar-nav .nav-link {
         height: 65px;
-        padding: 0 1.5rem !important;
+        padding: 0 0.5rem !important;
+        margin: 0 0.05rem;
     }
-}
-
-/* 防止文字跳動的佔位 */
-.navbar-nav .nav-link::after {
-    display: block;
-    content: attr(data-text);
-    font-weight: 700;
-    height: 0;
-    overflow: hidden;
-    visibility: hidden;
 }
 
 .navbar-nav .nav-link:hover {
@@ -82,10 +73,9 @@ body {
     border-radius: 8px 8px 0 0;
 }
 
-
 .navbar-nav .nav-link.active {
     color: #0067b8 !important;
-    font-weight: 700;
+    font-weight: 600;
     background-color: transparent;
 }
 
@@ -94,8 +84,8 @@ body {
         content: "";
         position: absolute;
         bottom: 0;
-        left: 1.5rem;
-        right: 1.5rem;
+        left: 0;
+        right: 0;
         height: 3px;
         background-color: #0067b8;
         border-radius: 3px 3px 0 0;

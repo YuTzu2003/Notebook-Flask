@@ -33,30 +33,20 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav mx-auto fw-medium small">
                     <li class="nav-item">
-                        <a class="nav-link {{'active' if request.path.startswith('/docVersion') else ''}}" href="/docVersion" data-text="文件版本">
-                            <i class="bi bi-files me-2"></i>文件版本
-                        </a>
+                        <a class="nav-link {{'active' if request.path.startswith('/docVersion') else ''}}" href="/docVersion" data-text="文件版本">文件版本</a>
                     </li>  
                     <li class="nav-item">
-                        <a class="nav-link {{'active' if request.path.startswith('/mapping') else ''}}" href="/mapping" data-text="版本比對">
-                            <i class="bi bi-intersect me-2"></i>版本比對
-                        </a>
+                        <a class="nav-link {{'active' if request.path.startswith('/mapping') else ''}}" href="/mapping" data-text="版本比對">版本比對</a>
                     </li>        
                     <li class="nav-item">
-                        <a class="nav-link {{'active' if request.path.startswith('/notes') else ''}}" href="/notes" data-text="筆記轉移">
-                            <i class="bi bi-arrow-left-right me-2"></i>筆記轉移
-                        </a>
+                        <a class="nav-link {{'active' if request.path.startswith('/notes') else ''}}" href="/notes" data-text="筆記轉移">筆記轉移</a>
                     </li>  
                     {% if session.Position == 'Admin' %}                
                     <li class="nav-item">
-                        <a class="nav-link {{'active' if request.endpoint == 'auth.admin_users' else ''}}" href="{{ url_for('auth.admin_users') }}" data-text="使用者管理">
-                            <i class="bi bi-people me-2"></i>使用者管理
-                        </a>
+                        <a class="nav-link {{'active' if request.endpoint == 'auth.admin_users' else ''}}" href="{{ url_for('auth.admin_users') }}" data-text="使用者管理">使用者管理</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {{'active' if request.endpoint == 'auth.admin_logs' else ''}}" href="{{ url_for('auth.admin_logs') }}" data-text="系統日誌">
-                            <i class="bi bi-journal-text me-2"></i>系統日誌
-                        </a>
+                        <a class="nav-link {{'active' if request.endpoint == 'auth.admin_logs' else ''}}" href="{{ url_for('auth.admin_logs') }}" data-text="系統日誌">系統日誌</a>
                     </li>
                     {% endif %}             
                 </ul>

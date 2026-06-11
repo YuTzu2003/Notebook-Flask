@@ -17,14 +17,37 @@ def mapping_page():
     sql_history = """
                     SELECT  MappingRecord.RecordID, Users.Name, DocVersion_Old.FileName AS OldFileName, DocVersion_Old.Version AS OldVersion, 
                             DocVersion_New.FileName AS NewFileName, DocVersion_New.Version AS NewVersion,MappingRecord.Status, dbo.MappingRecord.CreateTime, 
-                            MappingRecord.IsPublish
+                            MappingRecord.IsPublish, MappingRecord.DiffPages
                     FROM MappingRecord INNER JOIN Users ON MappingRecord.Creator = Users.ID 
                     LEFT OUTER JOIN DocVersion AS DocVersion_Old ON MappingRecord.OldDocID = DocVersion_Old.ID 
                     LEFT OUTER JOIN DocVersion AS DocVersion_New ON MappingRecord.NewDocID = DocVersion_New.ID
-                    ORDER BY dbo.MappingRecord.CreateTime ASC
+                    ORDER BY dbo.MappingRecord.CreateTime DESC
                 """
     history = fetch_all(sql_history)
     return render_template('mapping.html',files=docVersion,history=history)
+
+import threading
+
+def run_mapping_background(app, record_id, old_pdf_path, new_pdf_path, csv_result, diff_pdf_path):
+    with app.app_context():
+        try:
+            from modules.mapping import UseMapping
+            from modules.db import execute_query
+            
+            result_df, diff_pages = UseMapping(old_pdf_path, new_pdf_path, csv_result, diff_pdf_path)
+            is_success = 1 if not result_df.empty else 0
+            diff_pages_str = ",".join(map(str, diff_pages)) if diff_pages else ""
+            
+            if is_success == 1:
+                sql = "UPDATE MappingRecord SET Status = ?, DiffPages = ?, IsPublish = 1 WHERE RecordID = ?"
+            else:
+                sql = "UPDATE MappingRecord SET Status = ?, DiffPages = ? WHERE RecordID = ?"
+            execute_query(sql, (is_success, diff_pages_str, record_id))
+        except Exception as e:
+            print("Background Mapping Error:", e)
+            from modules.db import execute_query
+            sql = "UPDATE MappingRecord SET Status = 0, DiffPages = 'ERROR' WHERE RecordID = ?"
+            execute_query(sql, (record_id,))
 
 @bp_mapping.route("/mapping/doc_mapping", methods=["POST"])
 def doc_mapping():
@@ -45,20 +68,22 @@ def doc_mapping():
     new_pdf_path = f"{VERSION_Folder}/{new_id}.pdf"
 
     record_id = "map" + uuid.uuid4().hex[:8]
-    project_folder = f"{Mapping_Folder}/{record_id}"
+    project_folder = f"{current_app.root_path}/{Mapping_Folder}/{record_id}"
     os.makedirs(project_folder, exist_ok=True)
     
     csv_result = f"{project_folder}/{record_id}.csv"
     diff_pdf_path = f"{project_folder}/{record_id}.pdf"
-    result_df, diff_pages = UseMapping(old_pdf_path, new_pdf_path, csv_result, diff_pdf_path)
 
-    is_success = 1 if not result_df.empty else 0
-    diff_pages_str = ",".join(map(str, diff_pages)) if diff_pages else ""
-
+    # 先寫入資料庫，狀態為 0，DiffPages 為 'PROCESSING'
     sql = """INSERT INTO MappingRecord (RecordID, OldDocID, NewDocID, Creator, Status, IsPublish, DiffPages) VALUES (?, ?, ?, ?, ?, ?, ?)"""
-    params = (record_id,old_id,new_id,creator,is_success,1,diff_pages_str)
+    params = (record_id, old_id, new_id, creator, 0, 0, 'PROCESSING')
+    
     if execute_query(sql, params):
-        return jsonify({"status": "success", "message": "版本比對完成！"})
+        app_obj = current_app._get_current_object()
+        thread = threading.Thread(target=run_mapping_background, args=(app_obj, record_id, old_pdf_path, new_pdf_path, csv_result, diff_pdf_path))
+        thread.start()
+        
+        return jsonify({"status": "success", "message": "版本比對已在背景開始執行！"})
     else:
         return jsonify({"status": "error", "message": "比對過程中發生資料庫錯誤"})
 
@@ -143,3 +168,12 @@ def mapping_action():
             with open(file_path, "r", encoding="utf-8") as f:
                 return f.read()
         return "找不到 CSV", 404
+
+@bp_mapping.route("/mapping/status/<record_id>", methods=["GET"])
+@login_required
+def mapping_status(record_id):
+    sql = "SELECT Status, DiffPages FROM MappingRecord WHERE RecordID = ?"
+    result = fetch_all(sql, (record_id,))
+    if result:
+        return jsonify({"success": True, "Status": result[0]["Status"], "DiffPages": result[0]["DiffPages"]})
+    return jsonify({"success": False}), 404
