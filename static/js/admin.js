@@ -126,3 +126,43 @@ function deleteUser(guid, displayId) {
     })
     .catch(err => console.error(err));
 }
+
+// 取得登入紀錄並渲染
+async function fetchLoginLogs() {
+    const container = document.getElementById("loginLogsContainer");
+    container.innerHTML = '<div class="p-5 text-center text-muted"><div class="spinner-border spinner-border-sm me-2"></div>正在載入紀錄...</div>';
+    
+    try {
+        const res = await fetch("/admin/login_logs");
+        const data = await res.json();
+        
+        if (data.success && data.logs && data.logs.length > 0) {
+            let html = "";
+            data.logs.forEach(log => {
+                const isSuccess = log.status === "Success";
+                const icon = isSuccess ? "bi-check-circle-fill text-success" : "bi-x-circle-fill text-danger";
+                const bg = isSuccess ? "bg-success bg-opacity-10 text-success" : "bg-danger bg-opacity-10 text-danger";
+                
+                html += `
+                    <div class="list-group-item p-3 border-bottom border-light">
+                        <div class="d-flex align-items-center mb-1">
+                            <i class="bi ${icon} me-2 fs-5"></i>
+                            <strong class="text-dark">${log.emp_id}</strong>
+                            <span class="ms-auto text-muted small">${log.timestamp}</span>
+                        </div>
+                        <div class="d-flex align-items-center ms-4 ps-1 text-muted small">
+                            <span class="badge ${bg} me-2 border-0 fw-normal">${log.message}</span>
+                            <span>IP: ${log.ip}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        } else {
+            container.innerHTML = '<div class="p-5 text-center text-muted">目前沒有任何登入紀錄</div>';
+        }
+    } catch (e) {
+        console.error("Fetch logs error:", e);
+        container.innerHTML = '<div class="p-5 text-center text-danger">載入失敗，請稍後再試</div>';
+    }
+}

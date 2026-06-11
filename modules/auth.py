@@ -1,8 +1,43 @@
 import os
 from flask import Blueprint, jsonify, render_template, request, redirect, url_for, session, flash
 from functools import wraps
+import json
+from datetime import datetime
 # from werkzeug.security import check_password_hash
 from modules.db import get_conn
+
+LOG_FILE_PATH = os.path.join("static", "login_history.json")
+
+def log_login_attempt(emp_id, status, message, ip_address):
+    os.makedirs(os.path.dirname(LOG_FILE_PATH), exist_ok=True)
+    
+    log_entry = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "emp_id": emp_id,
+        "status": status,
+        "message": message,
+        "ip": ip_address
+    }
+    
+    logs = []
+    if os.path.exists(LOG_FILE_PATH):
+        try:
+            with open(LOG_FILE_PATH, "r", encoding="utf-8") as f:
+                logs = json.load(f)
+        except Exception:
+            pass
+            
+    logs.append(log_entry)
+    
+    # 保留最近 1000 筆
+    if len(logs) > 1000:
+        logs = logs[-1000:]
+        
+    try:
+        with open(LOG_FILE_PATH, "w", encoding="utf-8") as f:
+            json.dump(logs, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print("Error saving log:", e)
 
 auth_bp = Blueprint("auth", __name__, template_folder="../templates")
 
@@ -28,6 +63,7 @@ def login():
         cursor.execute("""SELECT * FROM Users WHERE UserID = ? """, emp_id)
 
         user = cursor.fetchone()
+        ip_address = request.remote_addr
 
         # if user and check_password_hash(user.Password, password):
         if user and user.Password == password:
@@ -40,9 +76,17 @@ def login():
             cursor.execute("""UPDATE Users SET Last_login = GETDATE() WHERE ID = ? """, user.ID)
             conn.commit()
             conn.close()
+            
+            log_login_attempt(emp_id, "Success", "登入成功", ip_address)
+            
             return redirect(url_for("bp_index.index"))
 
         conn.close()
+        
+        # 紀錄失敗
+        message = "密碼錯誤" if user else "帳號不存在"
+        log_login_attempt(emp_id, "Failed", message, ip_address)
+        
         flash("帳號或密碼錯誤")
 
     return render_template("login.html")
@@ -71,15 +115,29 @@ def admin_users():
     conn = get_conn()
     cursor = conn.cursor()
     sort_val = request.args.get('sort_by', 'Last_login')# 預設
+    search_name = request.args.get('search_name', '').strip()
+    filter_pos = request.args.get('filter_pos', '')
     
     order = 'DESC' if sort_val == 'Last_login' else 'ASC'
-    sql = f"SELECT ID, UserID, Name, Position, Location, Last_login FROM Users ORDER BY {sort_val} {order}"
     
-    cursor.execute(sql)
+    sql = "SELECT ID, UserID, Name, Position, Location, Last_login FROM Users WHERE 1=1"
+    params = []
+    
+    if search_name:
+        sql += " AND Name LIKE ?"
+        params.append(f"%{search_name}%")
+        
+    if filter_pos:
+        sql += " AND Position = ?"
+        params.append(filter_pos)
+        
+    sql += f" ORDER BY {sort_val} {order}"
+    
+    cursor.execute(sql, tuple(params))
     columns = [column[0] for column in cursor.description]
     users = [dict(zip(columns, row)) for row in cursor.fetchall()]
     conn.close()
-    return render_template("admin.html", users=users, current_sort=sort_val)
+    return render_template("admin.html", users=users, current_sort=sort_val, search_name=search_name, filter_pos=filter_pos)
 
 @auth_bp.route("/admin/manage_user", methods=["POST"])
 @admin_required
@@ -159,3 +217,17 @@ def admin_logs():
         
     conn.close()
     return render_template("admin_logs.html", logs=logs)
+
+@auth_bp.route("/admin/login_logs")
+@login_required
+@admin_required
+def api_login_logs():
+    logs = []
+    if os.path.exists(LOG_FILE_PATH):
+        try:
+            with open(LOG_FILE_PATH, "r", encoding="utf-8") as f:
+                logs = json.load(f)
+        except Exception:
+            pass
+    # 回傳反轉的陣列，讓最新的在前面
+    return jsonify({"success": True, "logs": logs[::-1]})
