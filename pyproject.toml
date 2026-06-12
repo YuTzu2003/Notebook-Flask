@@ -5,12 +5,14 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "apscheduler>=3.11.2",
     "flask>=3.1.2",
     "pandas>=3.0.0",
     "pdfplumber>=0.11.9",
     "pdfrw>=0.4",
     "pymupdf>=1.26.7",
     "pyodbc>=5.3.0",
+    "python-dotenv>=1.2.2",
     "rapidfuzz>=3.14.3",
     "scikit-learn>=1.8.0",
 ]

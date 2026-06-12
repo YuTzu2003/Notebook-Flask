@@ -1,15 +1,17 @@
 import pyodbc
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 def get_conn():
-    return pyodbc.connect(
-        'DRIVER={ODBC Driver 17 for SQL Server};'
-        'SERVER=localhost;'
-        'port=1433;' 
-        'DATABASE=Hospital;'
-        'UID=YLH;'           
-        'PWD=YLH;'      
-        'TrustServerCertificate=yes;'
-    )
+    driver = os.environ.get("DB_DRIVER")
+    server = os.environ.get("DB_SERVER")
+    port = os.environ.get("DB_PORT")
+    database = os.environ.get("DB_NAME")
+    uid = os.environ.get("DB_USER")
+    pwd = os.environ.get("DB_PASS")
+    return pyodbc.connect(f'DRIVER={driver};'f'SERVER={server};'f'port={port};' f'DATABASE={database};'f'UID={uid};'           f'PWD={pwd};'      'TrustServerCertificate=yes;')
 
 def execute_query(sql, params=None):
     conn = None

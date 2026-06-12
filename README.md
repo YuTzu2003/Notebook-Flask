@@ -38,12 +38,19 @@ source .venv/bin/activate # Linux/Mac
 uv sync
 ```
 
-### 3. 設定資料庫連接
-請確認 `modules/db.py` 中的資料庫連接字串與您的本地環境一致。預設配置為：
-- **DRIVER**: ODBC Driver 17 for SQL Server
-- **SERVER**: localhost
-- **DATABASE**: Hospital
-- **UID/PWD**: YLH / YLH (依實際需求修改)
+### 3. 設定環境變數與資料庫連接
+在專案根目錄建立一個 `.env` 檔案，並寫入以下內容：
+
+```ini
+DB_DRIVER={ODBC Driver 17 for SQL Server}
+DB_SERVER=localhost
+DB_PORT=1433
+DB_NAME=Hospital
+DB_USER=YLH
+DB_PASS=YLH
+```
+
+請確認上述參數與您的本地資料庫環境一致（可依實際需求修改帳號密碼與主機位址）。
 
 ### 4. 執行專案
 ```bash
