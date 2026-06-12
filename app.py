@@ -4,7 +4,7 @@ import uuid
 import os
 from flask import Flask, jsonify, request
 from werkzeug.exceptions import HTTPException
-from modules.db import get_conn, execute_query
+from modules.db import execute_query
 from modules.auth import auth_bp
 from modules.annotation_edit import notes_bp
 from service.bp_index import bp_index
@@ -19,6 +19,7 @@ from waitress import serve
 
 logging.basicConfig(level=logging.INFO,format='%(asctime)s | %(levelname)s | %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
 app = Flask(__name__)
+app.config['TEMPLATES_AUTO_RELOAD'] = True  # 前端每次都重新讀取，不用重啟伺服器
 
 @app.errorhandler(Exception)
 def handle_exception(e):

@@ -33,7 +33,6 @@ cd notebook-flask
 uv venv
 
 .venv\Scripts\activate  # Windows
-source .venv/bin/activate # Linux/Mac
 
 uv sync
 ```
@@ -54,6 +53,6 @@ DB_PASS=YLH
 
 ### 4. 執行專案
 ```bash
-uv run app.py
+flask run
 ```
 啟動後，開啟瀏覽器造訪 `http://127.0.0.1:5001` 即可進入系統。

@@ -188,3 +188,51 @@ body {
     table-layout: fixed;
     width: 100%;
 }
+
+/* ============================
+   管理員深色導覽列 (Admin Theme)
+   ============================ */
+.navbar.navbar-admin {
+    background-color: #1e293b !important; /* 深藍黑色 */
+    border-bottom: 1px solid #0f172a;
+}
+.navbar.navbar-admin .navbar-brand h5 {
+    color: #ffffff !important;
+}
+.navbar.navbar-admin .nav-link {
+    color: #cbd5e1 !important;
+}
+.navbar.navbar-admin .nav-link:hover {
+    color: #ffffff !important;
+    background-color: rgba(255, 255, 255, 0.1);
+}
+.navbar.navbar-admin .nav-link.active {
+    color: #ffffff !important;
+    background-color: transparent;
+}
+.navbar.navbar-admin .nav-link::before {
+    background-color: #38bdf8; /* 亮藍色底線 */
+}
+.navbar.navbar-admin .text-secondary {
+    color: #cbd5e1 !important; /* 右側小鈴鐺變淺灰色 */
+}
+.navbar.navbar-admin .dropdown-toggle, 
+.navbar.navbar-admin .dropdown-toggle span {
+    color: #ffffff !important; /* 右側使用者名稱變白色 */
+}
+.navbar.navbar-admin .dropdown-toggle:hover {
+    color: #e2e8f0 !important;
+}
+
+@media (max-width: 991.98px) {
+    .navbar.navbar-admin .navbar-collapse {
+        background-color: #1e293b;
+        border-bottom: 1px solid #0f172a;
+    }
+    .navbar.navbar-admin .nav-link.active {
+        background-color: rgba(255, 255, 255, 0.15);
+    }
+    .navbar.navbar-admin .navbar-toggler-icon {
+        filter: invert(1); /* 讓漢堡按鈕變白色 */
+    }
+}
