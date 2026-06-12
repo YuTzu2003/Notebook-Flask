@@ -1,6 +1,7 @@
 import logging
 import traceback
 import uuid
+import os
 from flask import Flask, jsonify, request
 from werkzeug.exceptions import HTTPException
 from modules.db import get_conn, execute_query
@@ -14,6 +15,7 @@ from service.bp_notes import bp_notes
 from modules.backup import run_database_backup
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
+from waitress import serve
 
 logging.basicConfig(level=logging.INFO,format='%(asctime)s | %(levelname)s | %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
 app = Flask(__name__)
@@ -29,7 +31,7 @@ def handle_exception(e):
     execute_query(sql, (error_code, error_msg, tb))
     if request.path.startswith('/admin/manage_user') or request.path.startswith('/doc_tool') or request.path.startswith('/mapping_tool') or request.path.startswith('/notes_tool') or request.path.startswith('/annotation'):
         return jsonify({"success": False, "message": f"發生錯誤，錯誤代碼：{error_code}，請聯絡資訊人員。"}), 500
-    return f"<h3>發生錯誤</h3><p>錯誤代碼：<b>{error_code}</b>", 500
+    return f"<script>alert('發生錯誤，錯誤代碼：{error_code}，請聯絡資訊人員。'); window.history.back();</script>", 500
 
 app.secret_key = "replace-with-a-secret-key"
 app.register_blueprint(auth_bp)
@@ -48,6 +50,6 @@ atexit.register(lambda: scheduler.shutdown())
 logging.info("APScheduler is running: Automatic database backup is performed daily at 02:00.")
 
 if __name__ == "__main__":
-    app.run(debug=True,host="0.0.0.0",port=5000)
-    # app.run(host='0.0.0.0', port=80, debug=True)
-    # app.run(debug=True,host="0.0.0.0",port=51000,ssl_context=('server.crt', 'server.key'))
+    flask_port = int(os.environ.get("FLASK_PORT", 5000))
+    logging.info(f"Waitress server starting on port {flask_port}...")
+    serve(app, host="0.0.0.0", port=flask_port, threads=30)

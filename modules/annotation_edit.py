@@ -9,7 +9,7 @@ import pdfplumber
 from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file, session
 from modules.auth import login_required
-from modules.db import execute_query, fetch_all
+from modules.db import execute_query
 
 notes_bp = Blueprint('annotation_edit', __name__)
 
@@ -125,7 +125,7 @@ def add_blank_page():
     data = request.json
     doc_id, insert_after, current_mods = data.get("doc_id"), data.get("insert_after"), data.get("all_modifications", {})
     user_id = session.get("ID")
-    rows = fetch_all("SELECT StorageName FROM Documents WHERE DocID = ? AND User_ID = ?", (doc_id, user_id))
+    rows = execute_query("SELECT StorageName FROM Documents WHERE DocID = ? AND User_ID = ?", (doc_id, user_id))
     pdf_path = os.path.join(UPLOAD_Folder, rows[0]['StorageName'])
     temp_path = pdf_path + ".tmp"
     try:
@@ -149,7 +149,7 @@ def delete_page():
     data = request.json
     doc_id, page_idx, current_mods = data.get("doc_id"), data.get("page_idx"), data.get("all_modifications", {})
     user_id = session.get("ID")
-    rows = fetch_all("SELECT StorageName FROM Documents WHERE DocID = ? AND User_ID = ?", (doc_id, user_id))
+    rows = execute_query("SELECT StorageName FROM Documents WHERE DocID = ? AND User_ID = ?", (doc_id, user_id))
     pdf_path = os.path.join(UPLOAD_Folder, rows[0]['StorageName'])
     temp_path = pdf_path + ".tmp"
     try:

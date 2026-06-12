@@ -3,7 +3,7 @@ import os
 import json
 import fitz
 from modules.auth import login_required
-from modules.db import execute_query, fetch_all
+from modules.db import execute_query
 
 bp_index = Blueprint('bp_index', __name__)
 
@@ -15,7 +15,7 @@ NOTE_Folder = "static/annotation"
 def index():
     user_id = session.get("ID")
     sql = """SELECT DocID, OriginalName, UploadTime, Pages FROM Documents  WHERE User_ID = ? ORDER BY UploadTime DESC"""
-    documents = fetch_all(sql, (user_id,))
+    documents = execute_query(sql, (user_id,))
     return render_template("index.html", documents=documents)
 
 @bp_index.route("/doc_tool", methods=["POST"])
@@ -25,11 +25,7 @@ def doc_tool():
         data = request.json
         action, doc_id = data.get("action"), data.get("doc_id")
         user_id = session.get("ID")
-        rows = fetch_all("SELECT * FROM Documents WHERE DocID = ? AND User_ID = ?", (doc_id, user_id))
-        
-        if not rows:
-            return jsonify({"success": False, "message": "找不到文件紀錄"}), 404
-            
+        rows = execute_query("SELECT * FROM Documents WHERE DocID = ? AND User_ID = ?", (doc_id, user_id))
         doc_info = rows[0]
 
         pdf_path = f"{UPLOAD_Folder}/{doc_info['StorageName']}"
@@ -43,10 +39,6 @@ def doc_tool():
             return jsonify({"success": False, "message": "刪除失敗"}), 500
 
         elif action == "edit":
-            if not os.path.exists(pdf_path):
-                execute_query("DELETE FROM Documents WHERE DocID = ? AND User_ID = ?", (doc_id, user_id))
-                return jsonify({"success": False, "message": "PDF檔案遺失，自動清理紀錄，請重新上傳檔案"}), 404
-
             with fitz.open(pdf_path) as doc:
                 width, height = doc[0].rect.width, doc[0].rect.height
                 has_toc = len(doc.get_toc()) > 0
@@ -79,4 +71,4 @@ def doc_tool():
         
     except Exception as e:
         print(f"doc_tool Error: {e}")
-        return jsonify({"success": False, "message": f"伺服器錯誤: {str(e)}"}), 500
+        return jsonify({"success": False, "message": f"error: {str(e)}"}), 500

@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, session, flash, redirect,
 import os
 import uuid
 import fitz
-from modules.db import execute_query, fetch_all
+from modules.db import execute_query
 
 bp_docVersion = Blueprint('bp_docVersion', __name__)
 VERSION_Folder = 'static/docVersion'
@@ -45,7 +45,7 @@ def docVersion():
         return redirect(request.url)
     sort_by = request.args.get('sort_by', 'UploadTime')
     sql = f"""SELECT dbo.DocVersion.*, dbo.Users.Name FROM dbo.DocVersion INNER JOIN dbo.Users ON dbo.DocVersion.Uploader = dbo.Users.ID ORDER BY {sort_by} ASC"""
-    documents = fetch_all(sql)
+    documents = execute_query(sql)
     return render_template('docVersion.html', documents=documents, current_sort=sort_by)
 
 
@@ -54,7 +54,7 @@ def docVersion():
 def docVersion_tool(action, doc_id):
     if action == 'download':
         sql = "SELECT FileName FROM DocVersion WHERE ID = ?"
-        result = fetch_all(sql, (doc_id,))
+        result = execute_query(sql, (doc_id,))
         if not result:
             flash('找不到檔案', 'error')
             return redirect(url_for('bp_docVersion.docVersion'))
@@ -69,13 +69,13 @@ def docVersion_tool(action, doc_id):
 
     elif action == 'delete' and request.method == 'POST':
         check_sql = """SELECT COUNT(*) AS count FROM dbo.MappingRecord WHERE OldDocID = ? OR NewDocID = ?"""
-        check_result = fetch_all(check_sql, (doc_id, doc_id))
+        check_result = execute_query(check_sql, (doc_id, doc_id))
         
         if check_result and check_result[0]['count'] > 0:
             flash('該檔案存在於比對紀錄中，不可刪除！', 'error')
         else:
             sql_select = "SELECT ID FROM DocVersion WHERE ID = ?"
-            result = fetch_all(sql_select, (doc_id,))
+            result = execute_query(sql_select, (doc_id,))
             
             if result:
                 physical_filename = f"{doc_id}.pdf"
@@ -100,8 +100,6 @@ def docVersion_tool(action, doc_id):
         if not new_filename.lower().endswith('.pdf'):
             new_filename += '.pdf'
 
-        # 實體檔案名稱為 {edit_id}.pdf，因此我們不需要重新命名實體檔案
-        # 只要更新資料庫中的 FileName 欄位即可
         sql = "UPDATE DocVersion SET FileName = ?, Version = ?, Author = ? WHERE ID = ?"
         if execute_query(sql, (new_filename, new_version, new_author, edit_id)):
             flash('更新成功！', 'success')

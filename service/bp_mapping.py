@@ -2,8 +2,9 @@ from flask import Blueprint, render_template, request, jsonify, session, flash, 
 import os
 import uuid
 from modules.auth import login_required
-from modules.db import execute_query, fetch_all
+from modules.db import execute_query
 from modules.mapping import UseMapping
+import threading
 
 bp_mapping = Blueprint('bp_mapping', __name__)
 VERSION_Folder = 'static/docVersion'
@@ -13,7 +14,7 @@ Note_Folder = 'static/note'
 @bp_mapping.route("/mapping", methods=["GET"])
 def mapping_page():
     sql = "SELECT ID,FileName,Version FROM DocVersion ORDER BY UploadTime DESC"
-    docVersion = fetch_all(sql)
+    docVersion = execute_query(sql)
     sql_history = """
                     SELECT  MappingRecord.RecordID, Users.Name, DocVersion_Old.FileName AS OldFileName, DocVersion_Old.Version AS OldVersion, 
                             DocVersion_New.FileName AS NewFileName, DocVersion_New.Version AS NewVersion,MappingRecord.Status, dbo.MappingRecord.CreateTime, 
@@ -23,17 +24,16 @@ def mapping_page():
                     LEFT OUTER JOIN DocVersion AS DocVersion_New ON MappingRecord.NewDocID = DocVersion_New.ID
                     ORDER BY dbo.MappingRecord.CreateTime DESC
                 """
-    history = fetch_all(sql_history)
+    history = execute_query(sql_history)
     return render_template('mapping.html',files=docVersion,history=history)
 
-import threading
+
+mapping_semaphore = threading.Semaphore(3)
 
 def run_mapping_background(app, record_id, old_pdf_path, new_pdf_path, csv_result, diff_pdf_path):
     with app.app_context():
+        mapping_semaphore.acquire()
         try:
-            from modules.mapping import UseMapping
-            from modules.db import execute_query
-            
             result_df, diff_pages = UseMapping(old_pdf_path, new_pdf_path, csv_result, diff_pdf_path)
             is_success = 1 if not result_df.empty else 0
             diff_pages_str = ",".join(map(str, diff_pages)) if diff_pages else ""
@@ -45,19 +45,20 @@ def run_mapping_background(app, record_id, old_pdf_path, new_pdf_path, csv_resul
             execute_query(sql, (is_success, diff_pages_str, record_id))
         except Exception as e:
             print("Background Mapping Error:", e)
-            from modules.db import execute_query
+
             sql = "UPDATE MappingRecord SET Status = 0, DiffPages = 'ERROR' WHERE RecordID = ?"
             execute_query(sql, (record_id,))
+        finally:
+            mapping_semaphore.release()
 
 @bp_mapping.route("/mapping/doc_mapping", methods=["POST"])
 def doc_mapping():
-
     old_id = request.form.get("old_pdf_id")
     new_id = request.form.get("new_pdf_id")
     creator = session.get("ID")
 
     doc_files_sql = "SELECT ID, FileName FROM DocVersion WHERE ID IN (?, ?)"
-    files = fetch_all(doc_files_sql, (old_id, new_id))
+    files = execute_query(doc_files_sql, (old_id, new_id))
     file_map = {str(row['ID']): row['FileName'] for row in files}
 
     if str(old_id) not in file_map or str(new_id) not in file_map:
@@ -81,11 +82,10 @@ def doc_mapping():
     if execute_query(sql, params):
         app_obj = current_app._get_current_object()
         thread = threading.Thread(target=run_mapping_background, args=(app_obj, record_id, old_pdf_path, new_pdf_path, csv_result, diff_pdf_path))
-        thread.start()
-        
-        return jsonify({"status": "success", "message": "版本比對已在背景開始執行！"})
+        thread.start()      
+        return jsonify({"status": "success", "message": "版本比對開始執行！"})
     else:
-        return jsonify({"status": "error", "message": "比對過程中發生資料庫錯誤"})
+        return jsonify({"status": "error", "message": "比對過程中發生錯誤"})
 
 @bp_mapping.route("/mapping_tool", methods=["POST"])
 @login_required
@@ -96,7 +96,7 @@ def mapping_tool():
 
     if action == "delete":
         sql_find_history = "SELECT ResultName FROM NoteTransferHistory WHERE MappingID = ?"
-        history_files = fetch_all(sql_find_history, (record_id,))
+        history_files = execute_query(sql_find_history, (record_id,))
         
         for h in history_files:
             h_path = os.path.join(Note_Folder, h['ResultName'])
@@ -137,7 +137,7 @@ def mapping_action():
     if action == "preview":
         pdf_type = request.form.get("type") 
         sql = """SELECT MappingRecord.OldDocID, MappingRecord.NewDocID FROM MappingRecord WHERE MappingRecord.RecordID = ?"""
-        result = fetch_all(sql, (record_id,))[0]
+        result = execute_query(sql, (record_id,))[0]
         pdf_id = result["OldDocID"] if pdf_type == "old" else result["NewDocID"]
         return send_from_directory(os.path.join(current_app.root_path, VERSION_Folder), f"{pdf_id}.pdf", as_attachment=False)
 
@@ -173,7 +173,7 @@ def mapping_action():
 @login_required
 def mapping_status(record_id):
     sql = "SELECT Status, DiffPages FROM MappingRecord WHERE RecordID = ?"
-    result = fetch_all(sql, (record_id,))
+    result = execute_query(sql, (record_id,))
     if result:
         return jsonify({"success": True, "Status": result[0]["Status"], "DiffPages": result[0]["DiffPages"]})
     return jsonify({"success": False}), 404
