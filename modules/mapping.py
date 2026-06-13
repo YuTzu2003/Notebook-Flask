@@ -2,7 +2,6 @@ import fitz
 import pdfplumber
 import pandas as pd
 import re
-from difflib import SequenceMatcher
 from rapidfuzz import process, fuzz
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -168,58 +167,25 @@ def mapping_pages_with_toc_bounds(df_old, df_new, df_toc, output_csv):
         similarities = cosine_similarity(tfidf_old[i], tfidf_new[search_indices])
         scores = similarities[0]
         
-        top_k = min(5, len(scores))
+        top_k = min(3, len(scores))
         top_local_indices = scores.argsort()[-top_k:][::-1]     
         candidates = []
-        old_content = df_old.iloc[i]['content']
-
         for loc_idx in top_local_indices:
             glob_idx = search_indices[loc_idx]
-            new_page = df_new.iloc[glob_idx]['page_num']
-            tfidf_score = float(scores[loc_idx])
-            new_content = df_new.iloc[glob_idx]['content']
-
-            # B: 混合 TF-IDF cosine + difflib 結構相似度
-            seq_ratio = SequenceMatcher(None, old_content, new_content).ratio()
-            combined = 0.7 * tfidf_score + 0.3 * seq_ratio
-
-            # C: 章節內相對位置加權
-            position_bonus = 0.0
-            if not matched_toc_row.empty:
-                toc_r = matched_toc_row.iloc[0]
-                old_start = toc_r['Old_Start_Page']
-                old_end = toc_r['Old_End_Page']
-                new_start = toc_r['New_Start_Page']
-                new_end = toc_r['New_End_Page']
-                if pd.notna(old_start) and pd.notna(new_start):
-                    old_span = max(1, old_end - old_start)
-                    new_span = max(1, new_end - new_start)
-                    old_relative = (old_page - old_start) / old_span
-                    expected_new = new_start + old_relative * new_span
-                    position_bonus = 1.0 / (1.0 + abs(new_page - expected_new))
-
-            final_score = combined * 0.85 + position_bonus * 0.15
             candidates.append({
-                'page_num': new_page,
-                'score': final_score,
-                'tfidf': tfidf_score
+                'page_num': df_new.iloc[glob_idx]['page_num'],
+                'score': scores[loc_idx]
             })
-
-        # 按綜合分數重新排序
-        candidates.sort(key=lambda c: c['score'], reverse=True)
-
-        # A: 動態距離門檻（根據新舊版頁數差自動調整）
-        page_diff = abs(len(df_new) - len(df_old))
-        dynamic_threshold = max(20, page_diff + 10)
-        valid_candidates = [c for c in candidates if abs(c['page_num'] - old_page) <= dynamic_threshold]
-
+   
+        valid_candidates = [c for c in candidates if abs(c['page_num'] - old_page) <= 20]
+        
         if valid_candidates:
             best_match = valid_candidates[0]
-            match_reason = "Hybrid & Dynamic Distance"
+            match_reason = "Top3 & Distance<=20"
         else:
             best_match = candidates[0]
-            match_reason = "Highest Hybrid (Distance>threshold)"
-
+            match_reason = "Highest Score (Distance>20)"
+            
         matched_new_page = best_match['page_num']
         best_score = best_match['score']
 

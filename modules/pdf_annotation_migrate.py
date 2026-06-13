@@ -4,10 +4,58 @@ import pandas as pd
 import math
 import statistics
 import os
+import re
 from rapidfuzz import fuzz, process
 
 MANUAL_ADJUST_X = 0.0
 MANUAL_ADJUST_Y = 0.0
+
+
+def get_pdf_sections(doc):
+    """掃描 PDF，自動判定各個頁面對應的部位章節"""
+    sections = []
+    current_section = None
+    for page in doc:
+        text = page.get_text()
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        
+        is_app_b = False
+        for line in lines[:3]:
+            if "附錄B" in line or "Appendix B" in line:
+                is_app_b = True
+                break
+                
+        if is_app_b:
+            match_start = False
+            organ_name = ""
+            for i in range(len(lines) - 2):
+                l1 = lines[i]
+                l2 = lines[i+1]
+                l3 = lines[i+2]
+                if l1.isdigit() and re.match(r'^C\d+.*C\d+', l3):
+                    organ_name = l2
+                    match_start = True
+                    break
+                elif re.match(r'^C\d+.*C\d+', l2) and not l1.isdigit() and "附錄B" not in l1:
+                    organ_name = l1
+                    match_start = True
+                    break
+            if match_start:
+                current_section = organ_name
+        else:
+            current_section = None
+            
+        sections.append(current_section)
+    return sections
+
+
+def sections_match(sec1, sec2):
+    """比對兩個部位名稱是否相同（支援相似/子字串匹配）"""
+    if not sec1 or not sec2:
+        return sec1 == sec2
+    s1 = sec1.lower().replace(" ", "").replace("/", "").replace("-", "")
+    s2 = sec2.lower().replace(" ", "").replace("/", "").replace("-", "")
+    return (s1 in s2) or (s2 in s1)
 
 
 def get_word_score(w, annot_center, annot_rect):
@@ -35,15 +83,56 @@ def filtered_median(values, max_deviation=15):
     return statistics.median(filtered) if filtered else med
 
 def find_precise_offset(page_old, page_new, old_rect, processed_offsets):
-    for ref_rect, ref_dx, ref_dy in processed_offsets:
-        if abs(old_rect.x0 - ref_rect.x0) < 30 and abs(old_rect.y0 - ref_rect.y0) < 120:
-            return ref_dx, ref_dy, "群組"
+    for entry in processed_offsets:
+        if len(entry) == 5:
+            ref_rect, ref_dx, ref_dy, ref_target_idx, is_direct = entry
+            if not is_direct:
+                continue
+        else:
+            ref_rect, ref_dx, ref_dy, ref_target_idx = entry
+            
+        if abs(old_rect.x0 - ref_rect.x0) < 50 and abs(old_rect.y0 - ref_rect.y0) < 120:
+            return ref_dx, ref_dy, ref_target_idx, "群組", 999  # 群組享有最高優先權
 
     words_old = page_old.get_text("words")
-    if not words_old: return 0, 0, "無舊文保底"
+    if not words_old: return 0, 0, None, "無舊文保底", 0
     
     words_new = page_new.get_text("words")
-    if not words_new: return 0, 0, "無新文保底"
+    if not words_new: return 0, 0, None, "無新文保底", 0
+
+    # Filter out words that belong to FreeText annotations (user typed notes)
+    # since their content does not belong to the background manual text.
+    freetext_rects_old = [annot.rect for annot in page_old.annots() if annot.type[1] == 'FreeText']
+    if freetext_rects_old:
+        filtered_words_old = []
+        for w in words_old:
+            w_rect = fitz.Rect(w[:4])
+            is_ft = False
+            for r in freetext_rects_old:
+                if w_rect.intersects(r):
+                    intersect = w_rect & r
+                    if intersect.get_area() / w_rect.get_area() > 0.5:
+                        is_ft = True
+                        break
+            if not is_ft:
+                filtered_words_old.append(w)
+        words_old = filtered_words_old
+
+    freetext_rects_new = [annot.rect for annot in page_new.annots() if annot.type[1] == 'FreeText']
+    if freetext_rects_new:
+        filtered_words_new = []
+        for w in words_new:
+            w_rect = fitz.Rect(w[:4])
+            is_ft = False
+            for r in freetext_rects_new:
+                if w_rect.intersects(r):
+                    intersect = w_rect & r
+                    if intersect.get_area() / w_rect.get_area() > 0.5:
+                        is_ft = True
+                        break
+            if not is_ft:
+                filtered_words_new.append(w)
+        words_new = filtered_words_new
 
     annot_center = ((old_rect.x0 + old_rect.x1)/2, (old_rect.y0 + old_rect.y1)/2)
     sorted_words = sorted(words_old, key=lambda w: get_word_score(w, annot_center, old_rect))
@@ -55,7 +144,7 @@ def find_precise_offset(page_old, page_new, old_rect, processed_offsets):
 
     for cw in candidate_anchors:
         text = cw[4].strip()
-        if len(text) < 2: continue 
+        if len(text) < 3: continue 
         
         cw_rect_old = fitz.Rect(cw[:4])
         hits = page_new.search_for(text)
@@ -77,62 +166,117 @@ def find_precise_offset(page_old, page_new, old_rect, processed_offsets):
                 offsets_y.append(dy)
 
     if len(offsets_x) >= 2:
-        return filtered_median(offsets_x), filtered_median(offsets_y), "精準AI"
+        return filtered_median(offsets_x), filtered_median(offsets_y), None, "精準AI", len(offsets_x)
     elif len(offsets_x) == 1:
-        return offsets_x[0], offsets_y[0], "弱AI"
+        return offsets_x[0], offsets_y[0], None, "弱AI", 1
 
-    return 0, 0, "兜底零位移"
+    return 0, 0, None, "兜底零位移", 0
 
 
 def find_text_based_position(page_old, page_new, old_rect_f):
-    # 1. 提取舊頁面中被標記覆蓋的文字
-    old_words = page_old.get_text("words")
+    def get_page_chars(page):
+        raw = page.get_text("rawdict")
+        chars = []
+        for block in raw.get("blocks", []):
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    for char in span.get("chars", []):
+                        c = char.get("c")
+                        bbox = char.get("bbox")
+                        if c and bbox:
+                            c_clean = c.strip()
+                            if c_clean:
+                                chars.append((bbox[0], bbox[1], bbox[2], bbox[3], c_clean))
+        return chars
+
+    # 1. 提取舊頁面中被標記覆蓋的字元
+    old_chars = get_page_chars(page_old)
     covered = []
-    for w in old_words:
-        w_rect = fitz.Rect(w[:4])
-        if not old_rect_f.intersects(w_rect):
+    for c in old_chars:
+        c_rect = fitz.Rect(c[:4])
+        if not old_rect_f.intersects(c_rect):
             continue
-        overlap = old_rect_f & w_rect
-        if overlap.get_area() / max(w_rect.get_area(), 1) > 0.3:
-            covered.append(w)
+        overlap = old_rect_f & c_rect
+        if overlap.get_area() / max(c_rect.get_area(), 1) > 0.3:
+            covered.append(c)
 
     if not covered:
         return None
 
-    # 依位置排序（同行按 y 分組，行內按 x 排序）
-    covered.sort(key=lambda w: (round(w[1] / 5) * 5, w[0]))
-    covered_texts = [w[4].strip() for w in covered if w[4].strip()]
-
-    if len(covered_texts) < 1:
+    # 2. 在新頁面中尋找相同的字元序列
+    new_chars = get_page_chars(page_new)
+    if not new_chars:
         return None
 
-    # 2. 在新頁面中尋找相同的文字序列
-    new_words = page_new.get_text("words")
-    if not new_words:
-        return None
-
-    new_texts = [w[4].strip() for w in new_words]
-    n = len(covered_texts)
+    n = len(covered)
     best_start = -1
-    best_score = 0.0
+    best_metric = -9999.0
 
-    for start in range(len(new_texts) - n + 1):
+    for start in range(len(new_chars) - n + 1):
         score = 0.0
         for j in range(n):
-            if covered_texts[j] == new_texts[start + j]:
+            if covered[j][4] == new_chars[start + j][4]:
                 score += 1.0
-            elif len(covered_texts[j]) >= 2 and fuzz.ratio(covered_texts[j], new_texts[start + j]) > 80:
+            elif fuzz.ratio(covered[j][4], new_chars[start + j][4]) > 80:
                 score += 0.8
         normalized = score / n
-        if normalized > best_score:
-            best_score = normalized
+        
+        # Calculate spatial distance from old rect to candidate start char
+        cand_x0 = new_chars[start][0]
+        cand_y0 = new_chars[start][1]
+        dist = abs(cand_x0 - old_rect_f.x0) + abs(cand_y0 - old_rect_f.y0)
+        metric = normalized - (dist / 10000.0)
+        
+        if metric > best_metric:
+            best_metric = metric
             best_start = start
 
-    if best_start < 0 or best_score < 0.6:
+    if best_start < 0:
         return None
 
-    # 3. 用匹配到的文字位置建立新的 QuadPoints——精確貼合文字邊界
-    matched = new_words[best_start:best_start + n]
+    best_score = 0.0
+    for j in range(n):
+        if covered[j][4] == new_chars[best_start + j][4]:
+            best_score += 1.0
+        elif fuzz.ratio(covered[j][4], new_chars[best_start + j][4]) > 80:
+            best_score += 0.8
+    normalized_best = best_score / n
+
+    if normalized_best < 0.6:
+        return None
+
+    matched = new_chars[best_start:best_start + n]
+
+    # --- WORD EXPANSION LOGIC ---
+    new_words = page_new.get_text("words")
+    expanded_matched = []
+    for c in matched:
+        c_x0, c_y0, c_x1, c_y1, char_text = c
+        c_rect = fitz.Rect(c_x0, c_y0, c_x1, c_y1)
+        best_word = None
+        for w in new_words:
+            # SKIP word expansion if the word contains Chinese characters
+            if any('\u4e00' <= char <= '\u9fff' for char in w[4]):
+                continue
+            w_rect = fitz.Rect(w[:4])
+            if c_rect.intersects(w_rect):
+                overlap = c_rect & w_rect
+                if overlap.get_area() / c_rect.get_area() > 0.5:
+                    best_word = w_rect
+                    break
+        if best_word:
+            expanded_matched.append((
+                min(c_x0, best_word.x0),
+                c_y0,
+                max(c_x1, best_word.x1),
+                c_y1,
+                char_text
+            ))
+        else:
+            expanded_matched.append(c)
+    matched = expanded_matched
+    # ----------------------------
+
     new_h = page_new.rect.height
 
     # 按行分組
@@ -170,7 +314,16 @@ def find_text_based_position(page_old, page_new, old_rect_f):
         union_rect |= rect
 
     pdf_rect = [union_rect.x0, new_h - union_rect.y1, union_rect.x1, new_h - union_rect.y0]
-    return quads, pdf_rect
+
+    # 計算舊頁面中 covers 矩形
+    x0_old = min(c[0] for c in covered)
+    y0_old = min(c[1] for c in covered)
+    x1_old = max(c[2] for c in covered)
+    y1_old = max(c[3] for c in covered)
+    old_h = page_old.rect.height
+    pdf_rect_old = [x0_old, old_h - y1_old, x1_old, old_h - y0_old]
+
+    return quads, pdf_rect, pdf_rect_old
 
 
 def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str=""):
@@ -190,6 +343,10 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
     # 紀錄舊版對應到新版，用於後續書籤文字
     reverse_mapping = {int(r["Matched_New_Page"]) - 1: int(r["Old_Page"]) - 1 for _, r in df.iterrows()}
 
+    # 提取舊版與新版的部位章節對應
+    old_sections = get_pdf_sections(doc_old)
+    new_sections = get_pdf_sections(doc_new)
+
     processed_offsets_map = {}
 
     for old_idx, new_idx in mapping.items():
@@ -204,6 +361,7 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
         if not p_new_p.Annots: p_new_p.Annots = pdfrw.PdfArray()
         if old_idx not in processed_offsets_map: processed_offsets_map[old_idx] = []
 
+        # Check overlaps and lazy-evaluate FreeText annotations in the original order.
         for annot in annots:
             if not annot.get('/Rect'): continue
 
@@ -212,58 +370,177 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             old_h = p_old_f.rect.height
             old_rect_f = fitz.Rect(r[0], old_h - r[3], r[2], old_h - r[1])
 
-            # 文字標記型註記：優先用文字錨定精準定位
-            if subtype in ['/Highlight', '/Underline', '/StrikeOut']:
-                text_result = find_text_based_position(p_old_f, p_new_f, old_rect_f)
-                if text_result:
-                    new_quads, new_rect = text_result
-                    annot.Rect = pdfrw.PdfArray([pdfrw.PdfObject(f"{x:.4f}") for x in new_rect])
-                    annot[PN('QuadPoints')] = pdfrw.PdfArray([pdfrw.PdfObject(f"{x:.4f}") for x in new_quads])
-                    # 移除舊的外觀串流，讓 PDF 閱讀器根據新的 QuadPoints 重新繪製
-                    if annot.get('/AP'):
-                        del annot['/AP']
-                    p_new_p.Annots.append(annot)
-                    continue  # 成功，跳過後續的偏移計算
+            target_new_idx = new_idx
+            dx, dy = 0, 0
+            text_result = None
+            scale_x, scale_y = 1.0, 1.0
 
-            text_dx, text_dy, status = find_precise_offset(p_old_f, p_new_f, old_rect_f, processed_offsets_map[old_idx])
-            dx = text_dx + page_origin_dx + MANUAL_ADJUST_X
-            dy = text_dy + page_origin_dy + MANUAL_ADJUST_Y
+            # Check if this annotation overlaps with any FreeText annotation on the old page
+            overlaps_freetext = False
+            freetext_idx = None
+            if subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly', '/Square', '/Circle', '/Redact']:
+                for oidx, other_annot in enumerate(annots):
+                    if other_annot == annot:
+                        continue
+                    if other_annot.get('/Subtype') == '/FreeText':
+                        other_r = [float(x) for x in other_annot['/Rect']]
+              # If overlaps with a FreeText, ensure the FreeText's offset is already calculated.
+            # If not yet calculated, lazy evaluate it now and store it in processed_offsets_map.
+            ft_dx, ft_dy, ft_target_idx = None, None, None
+            if overlaps_freetext and freetext_idx is not None:
+                ft_annot = annots[freetext_idx]
+                ft_r = [float(x) for x in ft_annot['/Rect']]
+                ft_rect_f = fitz.Rect(ft_r[0], old_h - ft_r[3], ft_r[2], old_h - ft_r[1])
+                
+                # Check if this FreeText offset has already been computed
+                found_ft = False
+                for entry in processed_offsets_map[old_idx]:
+                    ref_rect, ref_dx, ref_dy, ref_target_idx, is_direct = entry
+                    if abs(ft_rect_f.x0 - ref_rect.x0) < 5 and abs(ft_rect_f.y0 - ref_rect.y0) < 5:
+                        found_ft = True
+                        ft_dx, ft_dy, ft_target_idx = ref_dx, ref_dy, ref_target_idx
+                        break
+                
+                if not found_ft:
+                    ft_dx, ft_dy, ft_target_idx, ft_status, ft_match_count = find_precise_offset(
+                        p_old_f, p_new_f, ft_rect_f, processed_offsets_map[old_idx]
+                    )
+                    processed_offsets_map[old_idx].append((ft_rect_f, ft_dx, ft_dy, ft_target_idx, True))
+                    ft_dx, ft_dy, ft_target_idx = ft_dx, ft_dy, ft_target_idx
 
-            processed_offsets_map[old_idx].append((old_rect_f, dx, dy))
+            # 1. 優先嘗試文字定位 (適用於文字標註、外框等)
+            if overlaps_freetext and ft_dx is not None:
+                dx = ft_dx
+                dy = ft_dy
+                target_new_idx = ft_target_idx
+            else:
+                if not overlaps_freetext and subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly', '/Square', '/Circle', '/Redact']:
+                    text_result = find_text_based_position(p_old_f, p_new_f, old_rect_f)
+                    if not text_result:
+                        # 嘗試在鄰近頁面（+1, -1, +2）搜尋
+                        for offset in [1, -1, 2]:
+                            cand_idx = new_idx + offset
+                            if 0 <= cand_idx < len(doc_new):
+                                if not sections_match(old_sections[old_idx], new_sections[cand_idx]):
+                                    continue
+                                res = find_text_based_position(p_old_f, doc_new[cand_idx], old_rect_f)
+                                if res:
+                                    text_result = res
+                                    target_new_idx = cand_idx
+                                    break
+                    if text_result:
+                        new_quads, new_rect, pdf_rect_old = text_result
+                        
+                        # Calculate padding in old coordinates
+                        left_pad = r[0] - pdf_rect_old[0]
+                        right_pad = r[2] - pdf_rect_old[2]
+                        bottom_pad = r[1] - pdf_rect_old[1]
+                        top_pad = r[3] - pdf_rect_old[3]
+                        
+                        if subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly']:
+                            annot[PN('QuadPoints')] = pdfrw.PdfArray([pdfrw.PdfObject(f"{x:.4f}") for x in new_quads])
+                            x0_min = min(new_quads[0::2])
+                            y0_min = min(new_quads[1::2])
+                            x1_max = max(new_quads[0::2])
+                            y1_max = max(new_quads[1::2])
+                            new_rect_annot = [x0_min, y0_min, x1_max, y1_max]
+                        else:
+                            new_rect_annot = [
+                                new_rect[0] + left_pad,
+                                new_rect[1] + bottom_pad,
+                                new_rect[2] + right_pad,
+                                new_rect[3] + top_pad
+                            ]
+                        
+                        dx = new_rect_annot[0] - r[0]
+                        dy = r[1] - new_rect_annot[1]
 
+                        # Calculate scales for /AP scaling
+                        w_old = r[2] - r[0]
+                        h_old = r[3] - r[1]
+                        w_new = new_rect_annot[2] - new_rect_annot[0]
+                        h_new = new_rect_annot[3] - new_rect_annot[1]
+                        scale_x = w_new / w_old if w_old > 0 else 1.0
+                        scale_y = h_new / h_old if h_old > 0 else 1.0
+
+                # 2. 如果沒有文字定位結果，則走 AI 錨點比對或群組
+                status = "未群組"
+                if not text_result:
+                    text_dx, text_dy, group_target_idx, status, match_count = find_precise_offset(p_old_f, p_new_f, old_rect_f, processed_offsets_map[old_idx])
+                    
+                    if status == "群組" and group_target_idx is not None:
+                        target_new_idx = group_target_idx
+                        dx = text_dx
+                        dy = text_dy
+                    else:
+                        best_match_count = -1
+                        best_dx, best_dy = 0, 0
+                        best_target_idx = new_idx
+
+                        for offset in [0, 1, -1, 2]:
+                            cand_idx = new_idx + offset
+                            if 0 <= cand_idx < len(doc_new):
+                                if not sections_match(old_sections[old_idx], new_sections[cand_idx]):
+                                    continue
+                                cand_p_new = doc_new[cand_idx]
+                                # 傳入空 array，不使用之前記錄的群組位移，以便純粹評估該頁面的錨點匹配數
+                                cand_dx, cand_dy, _, cand_status, cand_match_count = find_precise_offset(p_old_f, cand_p_new, old_rect_f, [])
+                                if cand_status in ["精準AI", "弱AI"]:
+                                    if cand_match_count > best_match_count:
+                                        best_match_count = cand_match_count
+                                        best_dx = cand_dx
+                                        best_dy = cand_dy
+                                        best_status = cand_status
+                                        best_dx, best_dy = cand_dx, cand_dy
+                                        best_target_idx = cand_idx
+                        
+                        if best_match_count == -1:
+                            target_new_idx = new_idx
+                            cand_p_new = doc_new[target_new_idx]
+                            cand_origin_dx = cand_p_new.rect.x0 - p_old_f.rect.x0
+                            cand_origin_dy = cand_p_new.rect.y0 - p_old_f.rect.y0
+                            dx = cand_origin_dx + MANUAL_ADJUST_X
+                            dy = cand_origin_dy + MANUAL_ADJUST_Y
+                            dx = (cand_p_new.rect.x0 - p_old_f.rect.x0)
+                            dy = (cand_p_new.rect.y0 - p_old_f.rect.y0)
+                        else:
+                            target_new_idx = best_target_idx
+                            cand_p_new = doc_new[target_new_idx]
+                            cand_origin_dx = cand_p_new.rect.x0 - p_old_f.rect.x0
+                            cand_origin_dy = cand_p_new.rect.y0 - p_old_f.rect.y0
+                            dx = best_dx + cand_origin_dx + MANUAL_ADJUST_X
+                            dy = best_dy + cand_origin_dy + MANUAL_ADJUST_Y
+                            dx = best_dx + (cand_p_new.rect.x0 - p_old_f.rect.x0)
+                            dy = best_dy + (cand_p_new.rect.y0 - p_old_f.rect.y0)
+
+            # 3. 記錄到偏移量地圖中
+            is_direct = (text_result is not None) or (status != "群組")
+            processed_offsets_map[old_idx].append((old_rect_f, dx, dy, target_new_idx, is_direct))
+
+            # 4. 處理 FreeText 註解的特殊 DA 設定，其餘註解保留並平移 AP
             if subtype == '/FreeText':
                 for key in ['/AP', '/RD', '/IT']:
                     if annot.get(key): del annot[key]
                 annot.DA = pdfrw.PdfObject("( /Helv 12 Tf 1 0 0 rg )") 
-            elif subtype in ['/Line', '/Highlight', '/Ink', '/Square', '/Underline']:
-                if annot.get('/AP') and annot['/AP'].get('/N'):
-                    n = annot['/AP']['/N']
-                    if isinstance(n, pdfrw.PdfDict):
-                        orig_matrix = n.get('/Matrix')
-                        if not orig_matrix:
-                            n.Matrix = pdfrw.PdfArray([
-                                pdfrw.PdfObject('1'), pdfrw.PdfObject('0'), 
-                                pdfrw.PdfObject('0'), pdfrw.PdfObject('1'), 
-                                pdfrw.PdfObject(f"{dx:.4f}"), pdfrw.PdfObject(f"{-dy:.4f}")
-                            ])
-                        else:
-                            om = [float(x) for x in orig_matrix]
-                            n.Matrix = pdfrw.PdfArray([
-                                pdfrw.PdfObject(f"{om[0]}"), pdfrw.PdfObject(f"{om[1]}"), 
-                                pdfrw.PdfObject(f"{om[2]}"), pdfrw.PdfObject(f"{om[3]}"), 
-                                pdfrw.PdfObject(f"{(om[4]+dx):.4f}"), pdfrw.PdfObject(f"{(om[5]-dy):.4f}")
-                            ])
+            else:
+                pass
 
+            # 5. 更新註解 Rect
             new_rect = [r[0] + dx, r[1] - dy, r[2] + dx, r[3] - dy]
+            if text_result:
+                new_rect = new_rect_annot
             annot.Rect = pdfrw.PdfArray([pdfrw.PdfObject(f"{x:.4f}") for x in new_rect])
 
-            for key_name in ['QuadPoints', 'Vertices']:
-                val = annot.get(PN(key_name))
-                if val:
-                    pts = [float(x) for x in val]
-                    new_pts = [pdfrw.PdfObject(f"{(pts[i]+dx if i%2==0 else pts[i]-dy):.4f}") for i in range(len(pts))]
-                    annot[PN(key_name)] = pdfrw.PdfArray(new_pts)
+            # 6. 如果不是文字對位（或是有文字對位但保留舊 QuadPoints），更新 QuadPoints 與 Vertices 坐標
+            if not text_result or subtype not in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly']:
+                for key_name in ['QuadPoints', 'Vertices']:
+                    val = annot.get(PN(key_name))
+                    if val:
+                        pts = [float(x) for x in val]
+                        new_pts = [pdfrw.PdfObject(f"{(pts[i]+dx if i%2==0 else pts[i]-dy):.4f}") for i in range(len(pts))]
+                        annot[PN(key_name)] = pdfrw.PdfArray(new_pts)
 
+            # 7. 更新 InkList 畫筆跡坐標
             il = annot.get('/InkList')
             if il:
                 new_ink = pdfrw.PdfArray()
@@ -273,7 +550,11 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                     new_ink.append(pdfrw.PdfArray(new_path))
                 annot.InkList = new_ink
 
-            p_new_p.Annots.append(annot)
+            # 8. 將註解寫入目標頁面
+            p_target_p = reader_new.pages[target_new_idx]
+            if not p_target_p.Annots:
+                p_target_p.Annots = pdfrw.PdfArray()
+            p_target_p.Annots.append(annot)
 
     writer = pdfrw.PdfWriter()
     writer.write(output_pdf, reader_new)
