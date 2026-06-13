@@ -17,12 +17,12 @@ _pool = None
 def get_conn():
     global _pool
     if _pool is None:
-        driver = os.environ.get("DB_DRIVER", "{ODBC Driver 17 for SQL Server}")
-        server = os.environ.get("DB_SERVER", "localhost")
-        port = os.environ.get("DB_PORT", "1433")
-        database = os.environ.get("DB_NAME", "Hospital")
-        uid = os.environ.get("DB_USER", "YLH")
-        pwd = os.environ.get("DB_PASS", "YLH")
+        driver = os.environ.get("DB_DRIVER")
+        server = os.environ.get("DB_SERVER")
+        port = os.environ.get("DB_PORT")
+        database = os.environ.get("DB_NAME")
+        uid = os.environ.get("DB_USER")
+        pwd = os.environ.get("DB_PASS")
         conn_str = f"DRIVER={driver};SERVER={server};PORT={port};DATABASE={database};UID={uid};PWD={pwd};TrustServerCertificate=yes;"
         _pool = PooledDB(
             creator=DBConnectWrapper(conn_str),
@@ -64,3 +64,4 @@ def execute_query(sql, params=None):
     finally:
         if conn:
             conn.close()
+
