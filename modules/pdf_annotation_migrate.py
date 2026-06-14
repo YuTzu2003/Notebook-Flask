@@ -294,7 +294,7 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
     new_core_start = int(len(total_matched_chars) * ratio_start)
     new_core_end = new_core_start + int(len(total_matched_chars) * ratio_core)
     
-    new_core_start = max(0, min(new_core_start, len(total_matched_chars) - 1))git 
+    new_core_start = max(0, min(new_core_start, len(total_matched_chars) - 1)) 
     new_core_end = max(new_core_start + 1, min(new_core_end, len(total_matched_chars)))
     
     matched = total_matched_chars[new_core_start:new_core_end]

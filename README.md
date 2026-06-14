@@ -47,6 +47,9 @@ DB_PORT=1433
 DB_NAME=Hospital
 DB_USER=YLH
 DB_PASS=YLH
+FLASK_PORT=50001
+FLASK_RUN_PORT=50001
+FLASK_RUN_HOST=0.0.0.0
 ```
 
 請確認上述參數與您的本地資料庫環境一致（可依實際需求修改帳號密碼與主機位址）。
