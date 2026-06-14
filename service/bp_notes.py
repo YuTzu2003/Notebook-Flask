@@ -47,7 +47,7 @@ def notes_page():
     sort_map = {
         'SourceFileName': {'col': 'H.SourceFileName', 'dir': 'ASC'},
         'Version':        {'col': 'V_Old.Version',    'dir': 'ASC'},
-        'CreateTime':     {'col': 'H.CreateTime',     'dir': 'ASC'}
+        'CreateTime':     {'col': 'H.CreateTime',     'dir': 'DESC'}
     }
     
     config = sort_map.get(sort_by, sort_map['CreateTime'])
