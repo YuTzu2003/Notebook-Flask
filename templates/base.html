@@ -128,7 +128,7 @@
                                 <div class="d-flex align-items-start gap-2">
                                     ${icon}
                                     <div>
-                                        <div class="fw-bold">${n.title}</div>
+                                        <div>${n.title}</div>
                                         <div class="text-muted" style="font-size: 0.75rem;">${n.time}</div>
                                     </div>
                                 </div>
@@ -161,6 +161,81 @@
         }
         
         document.addEventListener("DOMContentLoaded", loadNotifs);
+
+        // Global Background Task Polling (Optimized to save resources)
+        async function checkTasks() {
+            try {
+                const res = await fetch('/api/user_processing_tasks');
+                if (res.status === 401 || res.status === 403 || res.status === 404) return false;
+                
+                const currentTasks = await res.json();
+                if (!currentTasks.mapping || !currentTasks.notes) return false;
+                
+                let knownProcessingTasks = JSON.parse(localStorage.getItem('sys_processing_tasks') || '{"mapping": [], "notes": []}');
+                let reloaded = false;
+                let hasActiveTasks = currentTasks.mapping.length > 0 || currentTasks.notes.length > 0;
+
+                // Check mapping tasks
+                for (const id of knownProcessingTasks.mapping) {
+                    if (!currentTasks.mapping.includes(id)) {
+                        const statusRes = await fetch(`/mapping/status/${id}`);
+                        if (statusRes.ok) {
+                            const statusData = await statusRes.json();
+                            if (statusData.success) {
+                                if (statusData.Status) addNotif('success', `文件版本比對已成功完成`);
+                                else addNotif('error', `文件版本比對失敗`);
+                            }
+                        }
+                        if (window.location.pathname.startsWith('/mapping')) reloaded = true;
+                    }
+                }
+
+                // Check notes tasks
+                for (const id of knownProcessingTasks.notes) {
+                    if (!currentTasks.notes.includes(id)) {
+                        const statusRes = await fetch(`/notes/status/${id}`);
+                        if (statusRes.ok) {
+                            const statusData = await statusRes.json();
+                            if (statusData.success) {
+                                if (statusData.ResultName !== 'ERROR') addNotif('success', `一筆筆記轉移已成功完成`);
+                                else addNotif('error', `一筆筆記轉移失敗`);
+                            }
+                        }
+                        if (window.location.pathname.startsWith('/notes')) reloaded = true;
+                    }
+                }
+
+                localStorage.setItem('sys_processing_tasks', JSON.stringify(currentTasks));
+
+                if (reloaded) {
+                    setTimeout(() => location.reload(), 500);
+                }
+                
+                return hasActiveTasks;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        // Run once on load to determine if polling is needed
+        checkTasks().then(hasActive => {
+            if (hasActive) {
+                // Only poll if there are active tasks
+                const pollInterval = setInterval(async () => {
+                    const stillActive = await checkTasks();
+                    if (!stillActive) {
+                        clearInterval(pollInterval); // Stop polling when all tasks are done
+                    }
+                }, 3000);
+            }
+        });
+
+        // Listen for updates from other tabs
+        window.addEventListener('storage', function(e) {
+            if (e.key === 'sys_notifications') {
+                loadNotifs(); // Instantly update the bell icon if another tab adds a notification
+            }
+        });
     </script>
 
     <style>

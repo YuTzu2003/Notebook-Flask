@@ -31,65 +31,7 @@ async function runMigrate() {
     }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-    const processingBadges = document.querySelectorAll('.processing-badge');
-    
-    processingBadges.forEach(badge => {
-        const transferId = badge.getAttribute('data-transfer-id');
-        if (!transferId) return;
 
-        const interval = setInterval(async () => {
-            try {
-                let res = await fetch(`/notes/status/${transferId}`);
-                let data = await res.json();
-
-                if (data.success && data.ResultName !== 'PROCESSING') {
-                    clearInterval(interval);
-                    
-                    const isSuccess = data.ResultName !== 'ERROR';
-                    
-                    const container = document.getElementById(`status-container-${transferId}`);
-                    if (container) {
-                        container.innerHTML = isSuccess ? 
-                            `<span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-10 fw-normal">success</span>` : 
-                            `<span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-10 fw-normal">error</span>`;
-                    }
-                    
-                    const downloadBtn = document.getElementById(`download-btn-${transferId}`);
-                    if (downloadBtn && isSuccess) {
-                        downloadBtn.classList.remove('disabled');
-                        downloadBtn.href = `/download_pdf/${data.ResultName}`;
-                    }
-
-                    const deleteBtn = document.getElementById(`delete-btn-${transferId}`);
-                    if (deleteBtn) deleteBtn.classList.remove('disabled');
-
-                    // Show Notification and Reload
-                    if (isSuccess) {
-                        if (typeof addNotif === 'function') {
-                            addNotif('success', `一筆筆記轉移已成功完成`);
-                        }
-                        setTimeout(() => location.reload(), 500);
-                    } else {
-                        Swal.fire({
-                            icon: 'error',
-                            title: '轉移失敗',
-                            text: '背景轉移時發生錯誤或無法解析此文件。',
-                            confirmButtonColor: '#0dcaf0'
-                        }).then(() => {
-                            if (typeof addNotif === 'function') {
-                                addNotif('error', `一筆筆記轉移失敗`);
-                            }
-                            location.reload();
-                        });
-                    }
-                }
-            } catch (e) {
-                console.error("Status Polling Error for ID:", transferId, e);
-            }
-        }, 3000); // 每 3 秒輪詢一次
-    });
-});
 
 async function deleteNote(transferId) {
     const result = await Swal.fire({
