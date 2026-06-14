@@ -424,7 +424,8 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                         other_rect_f = fitz.Rect(other_r[0], old_h - other_r[3], other_r[2], old_h - other_r[1])
                         if old_rect_f.intersects(other_rect_f):
                             intersect = old_rect_f & other_rect_f
-                            if intersect.get_area() / max(old_rect_f.get_area(), 1) > 0.5:
+                            # Lower threshold and use min area to ensure robust overlap detection
+                            if intersect.get_area() / max(min(old_rect_f.get_area(), other_rect_f.get_area()), 1) > 0.05:
                                 overlaps_freetext = True
                                 freetext_idx = oidx
                                 break
@@ -450,8 +451,9 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                     ft_dx, ft_dy, ft_target_idx, ft_status, ft_match_count = find_precise_offset(
                         p_old_f, p_new_f, ft_rect_f, processed_offsets_map[old_idx], words_cache
                     )
+                    if ft_target_idx is None:
+                        ft_target_idx = new_idx
                     processed_offsets_map[old_idx].append((ft_rect_f, ft_dx, ft_dy, ft_target_idx, True))
-                    ft_dx, ft_dy, ft_target_idx = ft_dx, ft_dy, ft_target_idx
 
             # 1. 優先嘗試文字定位 (適用於文字標註、外框等)
             if overlaps_freetext and ft_dx is not None:
