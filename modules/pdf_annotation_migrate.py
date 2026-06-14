@@ -269,7 +269,7 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
                 if end > len(new_chars) or end <= start:
                     continue
                     
-                new_cand_str = "".join([nc[4] for nc in new_chars[start:end]])
+                new_cand_str = new_str[start:end] # 效能優化：使用字串切片取代列表生成式
                 score = fuzz.ratio(old_pattern_str, new_cand_str) / 100.0
                 
                 # 計算距離懲罰，防範段落漂移到遙遠的重複句上
@@ -286,7 +286,7 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
     if best_match_start < 0:
         return None
 
-    # 6. 從新頁面的匹配區間中，等比例切出目標核心文字並處理單字展開
+    # 從新頁面的匹配區間中，等比例切出目標核心文字並處理單字展開
     total_matched_chars = new_chars[best_match_start:best_match_end]
     ratio_start = len_prefix / len(old_pattern_str)
     ratio_core = len_core / len(old_pattern_str)
@@ -294,27 +294,25 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
     new_core_start = int(len(total_matched_chars) * ratio_start)
     new_core_end = new_core_start + int(len(total_matched_chars) * ratio_core)
     
-    new_core_start = max(0, min(new_core_start, len(total_matched_chars) - 1))
+    new_core_start = max(0, min(new_core_start, len(total_matched_chars) - 1))git 
     new_core_end = max(new_core_start + 1, min(new_core_end, len(total_matched_chars)))
     
     matched = total_matched_chars[new_core_start:new_core_end]
     if not matched:
         return None
 
-    # 單字展開邏輯 (Word Expansion Logic)
     new_words = get_words(page_new)
+    english_word_rects = [fitz.Rect(w[:4]) for w in new_words if not any('\u4e00' <= char <= '\u9fff' for char in w[4])]
+    
     expanded_matched = []
     for c in matched:
         c_x0, c_y0, c_x1, c_y1, char_text = c
         c_rect = fitz.Rect(c_x0, c_y0, c_x1, c_y1)
         best_word = None
-        for w in new_words:
-            if any('\u4e00' <= char <= '\u9fff' for char in w[4]):
-                continue
-            w_rect = fitz.Rect(w[:4])
+        for w_rect in english_word_rects:
             if c_rect.intersects(w_rect):
                 overlap = c_rect & w_rect
-                if overlap.get_area() / c_rect.get_area() > 0.5:
+                if overlap.get_area() / max(c_rect.get_area(), 1) > 0.5:
                     best_word = w_rect
                     break
         if best_word:
