@@ -82,7 +82,7 @@ def filtered_median(values, max_deviation=15):
     filtered = [v for v in values if abs(v - med) < max_deviation]
     return statistics.median(filtered) if filtered else med
 
-def find_precise_offset(page_old, page_new, old_rect, processed_offsets):
+def find_precise_offset(page_old, page_new, old_rect, processed_offsets, words_cache=None):
     for entry in processed_offsets:
         if len(entry) == 5:
             ref_rect, ref_dx, ref_dy, ref_target_idx, is_direct = entry
@@ -94,10 +94,18 @@ def find_precise_offset(page_old, page_new, old_rect, processed_offsets):
         if abs(old_rect.x0 - ref_rect.x0) < 50 and abs(old_rect.y0 - ref_rect.y0) < 120:
             return ref_dx, ref_dy, ref_target_idx, "群組", 999  # 群組享有最高優先權
 
-    words_old = page_old.get_text("words")
+    def get_words(p):
+        if words_cache is not None:
+            key = (id(p.parent), p.number)
+            if key not in words_cache:
+                words_cache[key] = p.get_text("words")
+            return words_cache[key]
+        return p.get_text("words")
+
+    words_old = get_words(page_old)
     if not words_old: return 0, 0, None, "無舊文保底", 0
     
-    words_new = page_new.get_text("words")
+    words_new = get_words(page_new)
     if not words_new: return 0, 0, None, "無新文保底", 0
 
     # Filter out words that belong to FreeText annotations (user typed notes)
@@ -173,8 +181,12 @@ def find_precise_offset(page_old, page_new, old_rect, processed_offsets):
     return 0, 0, None, "兜底零位移", 0
 
 
-def find_text_based_position(page_old, page_new, old_rect_f):
+def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None, words_cache=None):
     def get_page_chars(page):
+        if rawdict_cache is not None:
+            key = (id(page.parent), page.number)
+            if key in rawdict_cache:
+                return rawdict_cache[key]
         raw = page.get_text("rawdict")
         chars = []
         for block in raw.get("blocks", []):
@@ -187,75 +199,123 @@ def find_text_based_position(page_old, page_new, old_rect_f):
                             c_clean = c.strip()
                             if c_clean:
                                 chars.append((bbox[0], bbox[1], bbox[2], bbox[3], c_clean))
+        if rawdict_cache is not None:
+            rawdict_cache[(id(page.parent), page.number)] = chars
         return chars
+
+    def get_words(p):
+        if words_cache is not None:
+            key = (id(p.parent), p.number)
+            if key not in words_cache:
+                words_cache[key] = p.get_text("words")
+            return words_cache[key]
+        return p.get_text("words")
 
     # 1. 提取舊頁面中被標記覆蓋的字元
     old_chars = get_page_chars(page_old)
-    covered = []
-    for c in old_chars:
+    covered_indices = []
+    for idx, c in enumerate(old_chars):
         c_rect = fitz.Rect(c[:4])
-        if not old_rect_f.intersects(c_rect):
-            continue
-        overlap = old_rect_f & c_rect
-        if overlap.get_area() / max(c_rect.get_area(), 1) > 0.3:
-            covered.append(c)
+        if old_rect_f.intersects(c_rect):
+            overlap = old_rect_f & c_rect
+            if overlap.get_area() / max(c_rect.get_area(), 1) > 0.3:
+                covered_indices.append(idx)
 
-    if not covered:
+    if not covered_indices:
         return None
 
-    # 2. 在新頁面中尋找相同的字元序列
+    # 找出核心覆蓋文字的起訖點
+    start_idx = covered_indices[0]
+    end_idx = covered_indices[-1]
+    covered = old_chars[start_idx:end_idx + 1]
+
+    # 2. 核心改進：建立含有前後文(Context)的舊版目標字串，用來解決重複句子的問題
+    context_len = 6
+    ctx_start = max(0, start_idx - context_len)
+    ctx_end = min(len(old_chars), end_idx + 1 + context_len)
+    
+    old_pattern_str = "".join([c[4] for c in old_chars[ctx_start:ctx_end]])
+    len_prefix = start_idx - ctx_start
+    len_core = (end_idx - start_idx) + 1
+
+    # 3. 獲取新頁面字元
     new_chars = get_page_chars(page_new)
     if not new_chars:
         return None
 
-    n = len(covered)
-    best_start = -1
+    new_str = "".join([c[4] for c in new_chars])
+    
+    best_match_start = -1
+    best_match_end = -1
     best_metric = -9999.0
 
-    for start in range(len(new_chars) - n + 1):
-        score = 0.0
-        for j in range(n):
-            if covered[j][4] == new_chars[start + j][4]:
-                score += 1.0
-            elif fuzz.ratio(covered[j][4], new_chars[start + j][4]) > 80:
-                score += 0.8
-        normalized = score / n
-        
-        # Calculate spatial distance from old rect to candidate start char
-        cand_x0 = new_chars[start][0]
-        cand_y0 = new_chars[start][1]
-        dist = abs(cand_x0 - old_rect_f.x0) + abs(cand_y0 - old_rect_f.y0)
-        metric = normalized - (dist / 10000.0)
-        
-        if metric > best_metric:
-            best_metric = metric
-            best_start = start
+    # 4. 先嘗試新版有沒有完全一模一樣的字串 (包含前後文)
+    exact_idx = new_str.find(old_pattern_str)
+    if exact_idx != -1:
+        # 新版可能有多處完全相同的背景字，用距離來判定最接近哪一個
+        for start_char_idx in range(len(new_chars) - len(old_pattern_str) + 1):
+            cand_str = "".join([nc[4] for nc in new_chars[start_char_idx : start_char_idx + len(old_pattern_str)]])
+            if cand_str == old_pattern_str:
+                cand_x0 = new_chars[start_char_idx + len_prefix][0]
+                cand_y0 = new_chars[start_char_idx + len_prefix][1]
+                dist = abs(cand_x0 - old_rect_f.x0) + abs(cand_y0 - old_rect_f.y0)
+                metric = 1.0 - (dist / 10000.0)
+                if metric > best_metric:
+                    best_metric = metric
+                    best_match_start = start_char_idx
+                    best_match_end = start_char_idx + len(old_pattern_str)
+                    
+    # 5. 如果完全匹配不到，代表新舊版之間多了逗號「，」或空格！啟動滑動視窗模糊比對
+    if best_match_start == -1:
+        window_size = len(old_pattern_str)
+        for start in range(len(new_chars) - window_size + 3):
+            for delta in [-2, -1, 0, 1, 2]: # 彈性伸縮視窗長度，容忍新版多出標點符號
+                end = start + window_size + delta
+                if end > len(new_chars) or end <= start:
+                    continue
+                    
+                new_cand_str = "".join([nc[4] for nc in new_chars[start:end]])
+                
+                # 模糊比對整句話（含前後文）
+                score = fuzz.ratio(old_pattern_str, new_cand_str) / 100.0
+                
+                # 加入距離懲罰，防止網底亂飛到其他頁首頁尾
+                cand_x0 = new_chars[start][0]
+                cand_y0 = new_chars[start][1]
+                dist = abs(cand_x0 - old_rect_f.x0) + abs(cand_y0 - old_rect_f.y0)
+                metric = score - (dist / 8000.0)
+                
+                if score > 0.82 and metric > best_metric: # 門檻設為 82%
+                    best_metric = metric
+                    best_match_start = start
+                    best_match_end = end
 
-    if best_start < 0:
+    if best_match_start < 0:
         return None
 
-    best_score = 0.0
-    for j in range(n):
-        if covered[j][4] == new_chars[best_start + j][4]:
-            best_score += 1.0
-        elif fuzz.ratio(covered[j][4], new_chars[best_start + j][4]) > 80:
-            best_score += 0.8
-    normalized_best = best_score / n
-
-    if normalized_best < 0.6:
+    # 6. 從新頁面的匹配區間中，等比例切出黃色網底對應的核心文字
+    total_matched_chars = new_chars[best_match_start:best_match_end]
+    ratio_start = len_prefix / len(old_pattern_str)
+    ratio_core = len_core / len(old_pattern_str)
+    
+    new_core_start = int(len(total_matched_chars) * ratio_start)
+    new_core_end = new_core_start + int(len(total_matched_chars) * ratio_core)
+    
+    new_core_start = max(0, min(new_core_start, len(total_matched_chars) - 1))
+    new_core_end = max(new_core_start + 1, min(new_core_end, len(total_matched_chars)))
+    
+    matched = total_matched_chars[new_core_start:new_core_end]
+    if not matched:
         return None
-
-    matched = new_chars[best_start:best_start + n]
 
     # --- WORD EXPANSION LOGIC ---
-    new_words = page_new.get_text("words")
+    new_words = get_words(page_new)
     expanded_matched = []
     for c in matched:
         c_x0, c_y0, c_x1, c_y1, char_text = c
         c_rect = fitz.Rect(c_x0, c_y0, c_x1, c_y1)
         best_word = None
         for w in new_words:
-            # SKIP word expansion if the word contains Chinese characters
             if any('\u4e00' <= char <= '\u9fff' for char in w[4]):
                 continue
             w_rect = fitz.Rect(w[:4])
@@ -265,13 +325,7 @@ def find_text_based_position(page_old, page_new, old_rect_f):
                     best_word = w_rect
                     break
         if best_word:
-            expanded_matched.append((
-                min(c_x0, best_word.x0),
-                c_y0,
-                max(c_x1, best_word.x1),
-                c_y1,
-                char_text
-            ))
+            expanded_matched.append((min(c_x0, best_word.x0), c_y0, max(c_x1, best_word.x1), c_y1, char_text))
         else:
             expanded_matched.append(c)
     matched = expanded_matched
@@ -283,7 +337,7 @@ def find_text_based_position(page_old, page_new, old_rect_f):
     lines = []
     current_line = [matched[0]]
     for w in matched[1:]:
-        if abs(w[1] - current_line[-1][1]) < 5:  # y 差距 < 5pt 視為同行
+        if abs(w[1] - current_line[-1][1]) < 6:  # 稍微放寬至 6pt 判定同行
             current_line.append(w)
         else:
             lines.append(current_line)
@@ -300,7 +354,6 @@ def find_text_based_position(page_old, page_new, old_rect_f):
         y1 = max(w[3] for w in line_words)
         all_rects.append(fitz.Rect(x0, y0, x1, y1))
 
-        # QuadPoints: PDF 座標（原點在左下角）
         quads.extend([
             x0, new_h - y0,   # top-left
             x1, new_h - y0,   # top-right
@@ -348,6 +401,8 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
     new_sections = get_pdf_sections(doc_new)
 
     processed_offsets_map = {}
+    rawdict_cache = {}
+    words_cache = {}
 
     for old_idx, new_idx in mapping.items():
         if old_idx >= len(doc_old) or new_idx >= len(doc_new): continue
@@ -378,13 +433,21 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             # Check if this annotation overlaps with any FreeText annotation on the old page
             overlaps_freetext = False
             freetext_idx = None
-            if subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly', '/Square', '/Circle', '/Redact']:
+            if subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly', '/Square', '/Circle', '/Redact', '/Text']:
                 for oidx, other_annot in enumerate(annots):
                     if other_annot == annot:
                         continue
                     if other_annot.get('/Subtype') == '/FreeText':
                         other_r = [float(x) for x in other_annot['/Rect']]
-              # If overlaps with a FreeText, ensure the FreeText's offset is already calculated.
+                        other_rect_f = fitz.Rect(other_r[0], old_h - other_r[3], other_r[2], old_h - other_r[1])
+                        if old_rect_f.intersects(other_rect_f):
+                            intersect = old_rect_f & other_rect_f
+                            if intersect.get_area() / max(old_rect_f.get_area(), 1) > 0.5:
+                                overlaps_freetext = True
+                                freetext_idx = oidx
+                                break
+
+            # If overlaps with a FreeText, ensure the FreeText's offset is already calculated.
             # If not yet calculated, lazy evaluate it now and store it in processed_offsets_map.
             ft_dx, ft_dy, ft_target_idx = None, None, None
             if overlaps_freetext and freetext_idx is not None:
@@ -403,7 +466,7 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 
                 if not found_ft:
                     ft_dx, ft_dy, ft_target_idx, ft_status, ft_match_count = find_precise_offset(
-                        p_old_f, p_new_f, ft_rect_f, processed_offsets_map[old_idx]
+                        p_old_f, p_new_f, ft_rect_f, processed_offsets_map[old_idx], words_cache
                     )
                     processed_offsets_map[old_idx].append((ft_rect_f, ft_dx, ft_dy, ft_target_idx, True))
                     ft_dx, ft_dy, ft_target_idx = ft_dx, ft_dy, ft_target_idx
@@ -415,7 +478,7 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 target_new_idx = ft_target_idx
             else:
                 if not overlaps_freetext and subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly', '/Square', '/Circle', '/Redact']:
-                    text_result = find_text_based_position(p_old_f, p_new_f, old_rect_f)
+                    text_result = find_text_based_position(p_old_f, p_new_f, old_rect_f, rawdict_cache, words_cache)
                     if not text_result:
                         # 嘗試在鄰近頁面（+1, -1, +2）搜尋
                         for offset in [1, -1, 2]:
@@ -423,7 +486,7 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                             if 0 <= cand_idx < len(doc_new):
                                 if not sections_match(old_sections[old_idx], new_sections[cand_idx]):
                                     continue
-                                res = find_text_based_position(p_old_f, doc_new[cand_idx], old_rect_f)
+                                res = find_text_based_position(p_old_f, doc_new[cand_idx], old_rect_f, rawdict_cache, words_cache)
                                 if res:
                                     text_result = res
                                     target_new_idx = cand_idx
@@ -466,7 +529,7 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 # 2. 如果沒有文字定位結果，則走 AI 錨點比對或群組
                 status = "未群組"
                 if not text_result:
-                    text_dx, text_dy, group_target_idx, status, match_count = find_precise_offset(p_old_f, p_new_f, old_rect_f, processed_offsets_map[old_idx])
+                    text_dx, text_dy, group_target_idx, status, match_count = find_precise_offset(p_old_f, p_new_f, old_rect_f, processed_offsets_map[old_idx], words_cache)
                     
                     if status == "群組" and group_target_idx is not None:
                         target_new_idx = group_target_idx
@@ -484,7 +547,7 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                                     continue
                                 cand_p_new = doc_new[cand_idx]
                                 # 傳入空 array，不使用之前記錄的群組位移，以便純粹評估該頁面的錨點匹配數
-                                cand_dx, cand_dy, _, cand_status, cand_match_count = find_precise_offset(p_old_f, cand_p_new, old_rect_f, [])
+                                cand_dx, cand_dy, _, cand_status, cand_match_count = find_precise_offset(p_old_f, cand_p_new, old_rect_f, [], words_cache)
                                 if cand_status in ["精準AI", "弱AI"]:
                                     if cand_match_count > best_match_count:
                                         best_match_count = cand_match_count
