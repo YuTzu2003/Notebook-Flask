@@ -596,9 +596,9 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 new_rect = new_rect_annot
             annot.Rect = pdfrw.PdfArray([pdfrw.PdfObject(f"{x:.4f}") for x in new_rect])
 
-            # 6. 如果不是文字對位（或是有文字對位但保留舊 QuadPoints），更新 QuadPoints 與 Vertices 坐標
+            # 6. 如果不是文字對位（或是有文字對位但保留舊 QuadPoints），更新 QuadPoints、Vertices 與 L 坐標 (L 用於 Line/箭頭)
             if not text_result or subtype not in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly']:
-                for key_name in ['QuadPoints', 'Vertices']:
+                for key_name in ['QuadPoints', 'Vertices', 'L']:
                     val = annot.get(PN(key_name))
                     if val:
                         pts = [float(x) for x in val]
@@ -617,6 +617,9 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
 
             # 8. 將註解寫入目標頁面
             p_target_p = reader_new.pages[target_new_idx]
+            # 更新註解對應的頁面引用，避免跨文件引用的懸空指針導致註解無法編輯
+            if annot.get('/P'):
+                annot.P = p_target_p
             if not p_target_p.Annots:
                 p_target_p.Annots = pdfrw.PdfArray()
             p_target_p.Annots.append(annot)
