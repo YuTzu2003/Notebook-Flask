@@ -97,7 +97,10 @@ def toc_mapping(old_pdf, new_pdf):
                 "New_Start_Page": new_start_page, "New_End_Page": new_end_page
             })
 
-    df_toc = pd.DataFrame(data)
+    df_toc = pd.DataFrame(data, columns=[
+        "Old_TOC", "New_TOC", "Similarity", "Status",
+        "Old_Start_Page", "Old_End_Page", "New_Start_Page", "New_End_Page"
+    ])
     return df_toc
 
 # 頁面內容抽取
@@ -105,30 +108,21 @@ def extract_text_with_tables(pdf_path, ignore_header_ratio=0.1, ignore_footer_ra
     doc = fitz.open(pdf_path)
     data = []
 
-    with pdfplumber.open(pdf_path) as pdf_plumber:
-        for page_num, page in enumerate(doc):
-            width, height = page.rect.width, page.rect.height
-            clip_rect = fitz.Rect(0, height * ignore_header_ratio, width, height * (1 - ignore_footer_ratio))
+    for page_num, page in enumerate(doc):
+        width, height = page.rect.width, page.rect.height
+        clip_rect = fitz.Rect(0, height * ignore_header_ratio, width, height * (1 - ignore_footer_ratio))
 
-            text = page.get_text("text", clip=clip_rect)
-            text = re.sub(r'\s+', ' ', text).strip()
+        text = page.get_text("text", clip=clip_rect)
+        full_text = re.sub(r'\s+', ' ', text).strip()
 
-            table_texts = []
-            if page_num < len(pdf_plumber.pages):
-                tables = pdf_plumber.pages[page_num].extract_tables()
-                if tables:  
-                    for table in tables:
-                        for row in table:
-                            table_texts.append(" ".join([str(cell) for cell in row if cell]))
+        if not full_text: continue
 
-            full_text = (text + " " + " ".join(table_texts)).strip()
-            if not full_text: continue
+        data.append({
+            "page_num": page_num + 1,
+            "content": full_text
+        })
 
-            data.append({
-                "page_num": page_num + 1,
-                "content": full_text
-            })
-
+    doc.close()
     return pd.DataFrame(data)
 
 # 目錄範圍的頁面比對模組
