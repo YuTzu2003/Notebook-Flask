@@ -2,18 +2,6 @@
 {% block title %}版本比對 - PDF做筆記{% endblock %}
 {% block extra_css %}
     <link rel="stylesheet" href="/static/css/mapping.css">
-    <style>
-        .doc-card {
-            border: 1px solid #ced4da !important;
-        }
-        .doc-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 10px 20px rgba(0,0,0,0.08) !important;
-        }
-        .transition-all {
-            transition: all 0.3s ease;
-        }
-    </style>
 {% endblock %}
 
 {% block content %}
@@ -66,14 +54,22 @@
         </div>
 
         <div class="card shadow-sm rounded-3">
-            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+            <div class="card-header bg-white border-bottom py-3 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
                 <h5 class="mb-0 text-secondary">版本比對紀錄</h5>
-                <form method="GET" action="/mapping" class="d-flex align-items-center m-0 gap-2">
-                    <label for="sort_by" class="form-label mb-0 text-muted small">排序方式</label>
-                    <select name="sort_by" id="sort_by" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
-                        <option value="CreateTime" {% if current_sort == 'CreateTime' %}selected{% endif %}>執行時間</option>
-                    </select>
-                </form>
+                
+                <div class="d-flex align-items-center flex-wrap gap-2 justify-content-md-end">
+                    <button type="button" class="btn btn-sm btn-outline-secondary px-3" id="selectAllBtn">全選</button>
+                    {% if session.Position == 'Admin' or session.Position == 'CTR'%}
+                    <button type="button" class="btn btn-sm btn-outline-secondary px-3" onclick="submitBatch('batch_delete')">批次刪除</button>
+                    {% endif %}
+                    
+                    <form method="GET" action="/mapping" class="d-flex align-items-center m-0 gap-2 ms-md-2" id="filterForm">
+                        <label for="sort_by" class="form-label mb-0 text-muted small text-nowrap">排序方式</label>
+                        <select name="sort_by" id="sort_by" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
+                            <option value="CreateTime" {% if current_sort == 'CreateTime' %}selected{% endif %}>執行時間</option>
+                        </select>
+                    </form>
+                </div>
             </div>
             
             <div class="card-body p-4 bg-light rounded-bottom">
@@ -84,6 +80,9 @@
                         <div class="card doc-card transition-all shadow-sm rounded-3">
                             <div class="card-body p-3 p-md-4 d-flex flex-column flex-md-row align-items-md-center gap-3">
                                 
+                                <div class="form-check me-2">
+                                    <input class="form-check-input custom-gray-check doc-checkbox" type="checkbox" name="doc_ids" value="{{ row.RecordID }}">
+                                </div>
                                 <!-- 左側：圖示 -->
                                 <div class="bg-primary-subtle rounded-3 p-2 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 50px; height: 50px;">
                                     <i class="bi bi-arrow-left-right fs-3 text-primary-emphasis"></i>

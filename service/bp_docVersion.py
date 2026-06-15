@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, session, flash, redirect, url_for, send_from_directory
+from flask import Blueprint, render_template, request, session, flash, redirect, url_for, send_from_directory, send_file
 import os
 import uuid
 import fitz
@@ -76,26 +76,21 @@ def docVersion_tool(action, doc_id):
         else:
             sql_select = "SELECT ID FROM DocVersion WHERE ID = ?"
             result = execute_query(sql_select, (doc_id,))
-            
-            if result:
-                physical_filename = f"{doc_id}.pdf"
-                file_path = f"{VERSION_Folder}/{physical_filename}"
-                
-                if execute_query("DELETE FROM DocVersion WHERE ID = ?", (doc_id,)):
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
-                    flash('刪除成功！', 'success')
-                else:
-                    flash('資料庫刪除失敗', 'error')
+            physical_filename = f"{doc_id}.pdf"
+            file_path = f"{VERSION_Folder}/{physical_filename}"         
+            if execute_query("DELETE FROM DocVersion WHERE ID = ?", (doc_id,)):
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                flash('刪除成功！', 'success')
             else:
-                flash('找不到該檔案', 'error')
+                flash('資料庫刪除失敗', 'error')
+
 
     elif action == 'edit' and request.method == 'POST':
         edit_id = request.form.get('edit_id')
         new_filename = request.form.get('edit_filename')
         new_version = request.form.get('edit_version')
         new_author = request.form.get('edit_author')
-
         new_filename = new_filename.strip() 
         if not new_filename.lower().endswith('.pdf'):
             new_filename += '.pdf'
@@ -106,6 +101,30 @@ def docVersion_tool(action, doc_id):
         else:
             flash('更新失敗！', 'error')
 
-    else:
-        flash('無效的操作', 'error')
+    elif action == 'batch_delete' and request.method == 'POST':
+        doc_ids = request.form.getlist('doc_ids')
+        if not doc_ids:
+            flash('未選取任何檔案', 'error')
+        else:
+            success_count = 0
+            for did in doc_ids:
+                check_sql = """SELECT COUNT(*) AS count FROM dbo.MappingRecord WHERE OldDocID = ? OR NewDocID = ?"""
+                check_result = execute_query(check_sql, (did, did))
+                
+                if check_result and check_result[0]['count'] > 0:
+                    continue
+                else:
+                    sql_select = "SELECT ID FROM DocVersion WHERE ID = ?"
+                    result = execute_query(sql_select, (did,))
+                    
+                    if result:
+                        physical_filename = f"{did}.pdf"
+                        file_path = f"{VERSION_Folder}/{physical_filename}"
+                        
+                        if execute_query("DELETE FROM DocVersion WHERE ID = ?", (did,)):
+                            if os.path.exists(file_path):
+                                os.remove(file_path)
+                            success_count += 1
+            flash(f'成功刪除 {success_count} 個檔案', 'success')
+
     return redirect(url_for('bp_docVersion.docVersion'))

@@ -198,10 +198,10 @@ def manage_user():
         conn.commit()
         return jsonify({"success": True, "message": "Add Successful"})
 
-@auth_bp.route("/admin/logs")
+@auth_bp.route("/admin/error_log")
 @login_required
 @admin_required
-def admin_logs():
+def error_log():
     conn = get_conn()
     cursor = conn.cursor()
     
@@ -216,7 +216,7 @@ def admin_logs():
         logs = []
         
     conn.close()
-    return render_template("admin_logs.html", logs=logs)
+    return render_template("error_log.html", logs=logs)
 
 @auth_bp.route("/admin/login_logs")
 @login_required

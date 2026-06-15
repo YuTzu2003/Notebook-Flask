@@ -1,4 +1,7 @@
-from flask import Blueprint, render_template, request, jsonify, session, send_from_directory, current_app
+import io
+import zipfile
+
+from flask import Blueprint, render_template, request, jsonify, send_file, session, send_from_directory, current_app
 import os
 import uuid
 import shutil
@@ -11,7 +14,6 @@ import os
 
 migrate_semaphore = threading.Semaphore(3)
 bp_notes = Blueprint('bp_notes', __name__)
-
 VERSION_Folder = 'static/docVersion'
 Mapping_Folder = "static/docMapResult"
 Note_Folder = 'static/note'
@@ -20,14 +22,7 @@ def run_migrate_background(app, transfer_id, old_pdf_path, new_pdf_path, csv_map
     with app.app_context():
         migrate_semaphore.acquire()
         try:
-            migrate_all_to_pdf(
-                old_pdf=old_pdf_path,           
-                new_pdf=new_pdf_path,     
-                csv_mapping=csv_mapping,    
-                output_pdf=output_pdf,
-                diff_pages_str=diff_pages_str
-            )
-            
+            migrate_all_to_pdf(old_pdf=old_pdf_path,new_pdf=new_pdf_path,csv_mapping=csv_mapping,output_pdf=output_pdf,diff_pages_str=diff_pages_str)
             time.sleep(1.5)
             sql = "UPDATE Hospital.dbo.NoteTransferHistory SET ResultName = ? WHERE TransferID = ?"
             execute_query(sql, (output_filename, transfer_id))
@@ -69,7 +64,6 @@ def notes_page():
                     ORDER BY {order_col} {order_dir}
                 """
     history = execute_query(sql_history, (user_id,))
-    
     return render_template("notes.html", mapping_history=mapping_history, history=history,current_sort=sort_by)
 
 
@@ -112,84 +106,84 @@ def migrate_pdf_api():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
   
-# @bp_notes.route("/annotation/migrate_existing_json", methods=["POST"])
-# def migrate_existing_json():
-#     try:
-#         json_filename = request.form.get("json_filename")
-#         mapping_id = request.form.get("mapping_id")
-
-#         if not json_filename or not mapping_id:
-#             return jsonify({"status": "error", "message": "缺少資料"})
-
-#         sql = """SELECT MappingRecord.OldDocID, MappingRecord.NewDocID FROM MappingRecord WHERE MappingRecord.RecordID = ?"""
-#         row = execute_query(sql, (mapping_id,))
-#         if not row:
-#             return jsonify({"status": "error", "message": "找不到比對紀錄"})
-
-#         row = row[0]
-#         old_pdf_path = os.path.join(VERSION_Folder, f"{row['OldDocID']}.pdf")
-#         new_pdf_path = os.path.join(VERSION_Folder, f"{row['NewDocID']}.pdf")
-#         mapping_csv_path = os.path.join(Mapping_Folder, mapping_id, f"{mapping_id}.csv")
-#         json_path = os.path.join(current_app.root_path, "static", "annotation", json_filename)
-#         name, ext = os.path.splitext(json_filename)
-#         new_json_name = f"{name}_轉移{ext}"
-#         output_json_path = os.path.join(current_app.root_path, "static", "annotation", new_json_name)
-
-#         '''
-#         migrate_with_json_output(
-#             old_pdf_path,
-#             new_pdf_path,
-#             json_path,
-#             mapping_csv_path,
-#             None,
-#             output_json_path
-#         )
-#         '''
-        
-#         return jsonify({
-#             "status": "success",
-#             "json_filename": new_json_name
-#         })
-
-#     except Exception as e:
-#         print("ERROR:", e)
-#         return jsonify({"status": "error", "message": str(e)})
-    
-@bp_notes.route('/download_pdf/<filename>')
-@login_required 
-def download_pdf(filename):
-    sql = """SELECT SourceFileName, TransferID FROM Hospital.dbo.NoteTransferHistory WHERE ResultName = ?"""
-    result = execute_query(sql, (filename,))
-
-    if result:
-        source_file_name = result[0]['SourceFileName']
-        transfer_id = result[0]['TransferID']
-        base_name = os.path.splitext(source_file_name)[0]
-        note_dir = os.path.join("static/note", transfer_id if transfer_id.startswith("note") else f"note{transfer_id}")
-        download_name = filename if filename.startswith("Move_") else f"{base_name}_Move.pdf"
-        
-        return send_from_directory(note_dir, filename, as_attachment=True, download_name=download_name)
-    return "File not found", 404
-
-
-@bp_notes.route("/notes_tool", methods=["POST"])
+@bp_notes.route("/notes/action", methods=["GET", "POST"])
 @login_required
-def notes_tool():
-    data = request.json
-    action = data.get("action")
-    transfer_id = data.get("transfer_id")
-    user_id = session.get("ID")
-    if action == "delete":
-        sql = "SELECT TransferID,ResultName FROM NoteTransferHistory WHERE TransferID = ? AND UserID = ?"
-        res = execute_query(sql, (transfer_id, user_id))
-        
-        if res:
-            if execute_query("DELETE FROM NoteTransferHistory WHERE TransferID = ? AND UserID = ?", (transfer_id, user_id)):
-                note_dir = os.path.join("static/note", transfer_id if transfer_id.startswith("note") else f"note{transfer_id}")
-                if os.path.exists(note_dir):
-                    shutil.rmtree(note_dir)
-                return jsonify({"success": True, "message": "刪除成功"})
-        return jsonify({"success": False, "message": "刪除失敗"}), 500
+def notes_action():
+    if request.method == "GET":
+        action = request.args.get("action")
+        if action == "download_pdf":
+            filename = request.args.get("filename")
+            sql = """SELECT SourceFileName, TransferID FROM Hospital.dbo.NoteTransferHistory WHERE ResultName = ?"""
+            result = execute_query(sql, (filename,))
+
+            if result:
+                source_file_name = result[0]['SourceFileName']
+                transfer_id = result[0]['TransferID']
+                base_name = os.path.splitext(source_file_name)[0]
+                note_dir = os.path.join(current_app.root_path, "static/note", transfer_id if transfer_id.startswith("note") else f"note{transfer_id}")
+                download_name = filename if filename.startswith("Move_") else f"{base_name}_Move.pdf"
+                
+                return send_from_directory(note_dir, filename, as_attachment=True, download_name=download_name)
+            return "File not found", 404
+        return "Bad Request", 400
+
+    elif request.method == "POST":
+        user_id = session.get("ID")
+        if request.is_json:
+            data = request.json
+            action = data.get("action")
+            transfer_id = data.get("transfer_id")
+            
+            if action == "delete":
+                sql = "SELECT TransferID,ResultName FROM NoteTransferHistory WHERE TransferID = ? AND UserID = ?"
+                res = execute_query(sql, (transfer_id, user_id))
+                
+                if res:
+                    if execute_query("DELETE FROM NoteTransferHistory WHERE TransferID = ? AND UserID = ?", (transfer_id, user_id)):
+                        note_dir = os.path.join(current_app.root_path, "static/note", transfer_id if transfer_id.startswith("note") else f"note{transfer_id}")
+                        if os.path.exists(note_dir):
+                            shutil.rmtree(note_dir)
+                        return jsonify({"success": True, "message": "刪除成功"})
+                return jsonify({"success": False, "message": "刪除失敗"}), 500
+            
+        else:
+            action = request.form.get("action")
+            transfer_ids = request.form.getlist("doc_ids")
+            
+            if action == "batch_delete":
+                success_count = 0
+                for tid in transfer_ids:
+                    sql = "SELECT TransferID,ResultName FROM NoteTransferHistory WHERE TransferID = ? AND UserID = ?"
+                    res = execute_query(sql, (tid, user_id))
+                    if res:
+                        if execute_query("DELETE FROM NoteTransferHistory WHERE TransferID = ? AND UserID = ?", (tid, user_id)):
+                            note_dir = os.path.join(current_app.root_path, "static/note", tid if tid.startswith("note") else f"note{tid}")
+                            if os.path.exists(note_dir):
+                                shutil.rmtree(note_dir)
+                            success_count += 1
+                from flask import flash, redirect, url_for
+                flash(f'成功刪除 {success_count} 筆紀錄', 'success')
+                return redirect(url_for('bp_notes.notes_page'))
+
+            elif action == "batch_download":
+                memory_file = io.BytesIO()
+                with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+                    for tid in transfer_ids:
+                        sql = "SELECT SourceFileName, ResultName FROM NoteTransferHistory WHERE TransferID = ? AND UserID = ?"
+                        res = execute_query(sql, (tid, user_id))
+                        if res:
+                            source_file_name = res[0]['SourceFileName']
+                            result_name = res[0]['ResultName']
+                            if result_name and result_name not in ['PROCESSING', 'ERROR']:
+                                base_name = os.path.splitext(source_file_name)[0]
+                                download_name = result_name if result_name.startswith("Move_") else f"{base_name}_Move.pdf"
+                                note_dir = os.path.join(current_app.root_path, "static/note", tid if tid.startswith("note") else f"note{tid}")
+                                file_path = os.path.join(note_dir, result_name)
+                                if os.path.exists(file_path):
+                                    zf.write(file_path, download_name)
+                memory_file.seek(0)
+                return send_file(memory_file,mimetype='application/zip',as_attachment=True,download_name='batch_notes_download.zip')         
+            return redirect(url_for('bp_notes.notes_page'))
 
 @bp_notes.route("/notes/status/<transfer_id>", methods=["GET"])
 @login_required
