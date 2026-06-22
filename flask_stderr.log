@@ -1,0 +1,9 @@
+2026-06-14 22:58:41 | INFO | Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-06-14 22:58:41 | INFO | Added job "run_database_backup" to job store "default"
+2026-06-14 22:58:41 | INFO | Scheduler started
+2026-06-14 22:58:41 | INFO | APScheduler is running: Automatic database backup is performed daily at 02:00.
+2026-06-14 22:58:41 | INFO | [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://120.113.70.251:5000
+2026-06-14 22:58:41 | INFO | [33mPress CTRL+C to quit[0m

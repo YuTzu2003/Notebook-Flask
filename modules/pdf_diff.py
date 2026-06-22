@@ -1,7 +1,7 @@
 import fitz  # PyMuPDF
 import os
 import re
-from difflib import SequenceMatcher
+from rapidfuzz.distance import Levenshtein
 from typing import List, Dict, Tuple
 
 
@@ -20,6 +20,40 @@ def is_page_content_identical(page1: fitz.Page, page2: fitz.Page) -> bool:
     text1 = re.sub(r'\s+', '', page1.get_text())
     text2 = re.sub(r'\s+', '', page2.get_text())
     return text1 == text2
+
+def group_and_merge_rects(rects: List[fitz.Rect], line_height_threshold: float = 5.0, horizontal_gap_threshold: float = 20.0) -> List[fitz.Rect]:
+    if not rects:
+        return []
+    
+    # 依 top 座標 (y0) 排序，便於分行
+    sorted_rects = sorted(rects, key=lambda r: r.y0)
+    
+    lines = []
+    current_line = [sorted_rects[0]]
+    
+    for r in sorted_rects[1:]:
+        if abs(r.y0 - current_line[0].y0) <= line_height_threshold:
+            current_line.append(r)
+        else:
+            lines.append(current_line)
+            current_line = [r]
+    lines.append(current_line)
+    
+    merged_rects = []
+    for line in lines:
+        # 同行內依左座標 (x0) 排序
+        line = sorted(line, key=lambda r: r.x0)
+        curr_rect = line[0]
+        for r in line[1:]:
+            # 若水平有重疊或間距小於閾值，則合併
+            if r.x0 <= curr_rect.x1 + horizontal_gap_threshold:
+                curr_rect = curr_rect | r
+            else:
+                merged_rects.append(curr_rect)
+                curr_rect = r
+        merged_rects.append(curr_rect)
+        
+    return merged_rects
 
 def highlight_and_bookmark_diffs(
     base_pdf_path: str,
@@ -57,22 +91,36 @@ def highlight_and_bookmark_diffs(
         base_text = [re.sub(r'\s+', '', word["text"]) for word in base_words]
         test_text = [re.sub(r'\s+', '', word["text"]) for word in test_words]
 
-        matcher = SequenceMatcher(None, base_text, test_text)
+        opcodes = Levenshtein.opcodes(base_text, test_text)
         has_diff = False
-        for tag, _, _, j1, j2 in matcher.get_opcodes():
+        diff_rects = []
+        for tag, _, _, j1, j2 in opcodes:
             if tag in ("insert", "replace", "delete"):
                 has_diff = True
                 for idx in range(j1, j2):
                     if idx < len(test_words):
-                        rect = test_words[idx]["rect"]
-                        highlight = test_page.add_highlight_annot(rect)
-                        highlight.set_colors(stroke=highlight_color)
-                        highlight.set_info(content=f"內容與原第 {old_idx + 1} 頁不同")
-                        highlight.update()
+                        diff_rects.append(test_words[idx]["rect"])
 
         if has_diff:
             pages_with_diffs.append(new_idx + 1)
             toc.append([1, f"內容差異 (原 p.{old_idx + 1} -> 新 p.{new_idx + 1})", new_idx + 1])
+
+            # 效能優化：若修改詞數佔整頁 60% 以上，標註整頁紅框線，避免逐字畫高亮导致崩潰
+            if len(test_words) > 0 and len(diff_rects) / len(test_words) > 0.6:
+                rect = fitz.Rect(10, 10, test_page.rect.width - 10, test_page.rect.height - 10)
+                highlight = test_page.add_rect_annot(rect)
+                highlight.set_colors(stroke=highlight_color)
+                highlight.set_border(width=3)
+                highlight.set_info(content=f"本頁內容相較於原第 {old_idx + 1} 頁有重大修改/完全重寫")
+                highlight.update()
+            else:
+                # 合併同行相鄰的標記，顯著降低 PDF 標註物件數量，加速儲存與下載
+                merged_rects = group_and_merge_rects(diff_rects)
+                for rect in merged_rects:
+                    highlight = test_page.add_highlight_annot(rect)
+                    highlight.set_colors(stroke=highlight_color)
+                    highlight.set_info(content=f"內容與原第 {old_idx + 1} 頁不同")
+                    highlight.update()
 
     if pages_with_diffs:
         target_doc.set_toc(toc)
