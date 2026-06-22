@@ -1,7 +1,5 @@
 {% extends "base.html" %}
-
 {% block title %}系統日誌 - PDF做筆記{% endblock %}
-
 {% block extra_css %}
     <link rel="stylesheet" href="/static/css/admin.css">  
     <style>
@@ -54,7 +52,7 @@
                                 </td>
                                 <td class="text-end pe-4">
                                     <button type="button" 
-                                            class="btn btn-sm btn-outline-secondary" 
+                                            class="btn btn-sm btn-outline-dark" 
                                             data-bs-toggle="modal" 
                                             data-bs-target="#logModal{{ log.LogID }}">
                                         查看詳細

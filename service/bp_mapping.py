@@ -1,6 +1,8 @@
-from flask import Blueprint, render_template, request, jsonify, session, flash, redirect, url_for, send_from_directory, current_app
+import zipfile
+from flask import Blueprint, render_template, request, jsonify, send_file, session, flash, redirect, url_for, send_from_directory, current_app
 import os
 import uuid
+from pandas import io
 from modules.auth import login_required
 from modules.db import execute_query
 from modules.mapping import UseMapping
@@ -75,7 +77,7 @@ def doc_mapping():
     csv_result = f"{project_folder}/{record_id}.csv"
     diff_pdf_path = f"{project_folder}/{record_id}.pdf"
 
-    # 先寫入資料庫，狀態為 0，DiffPages 為 'PROCESSING'
+    # 先寫入資料庫，狀態為 0，DiffPages為'PROCESSING'
     sql = """INSERT INTO MappingRecord (RecordID, OldDocID, NewDocID, Creator, Status, IsPublish, DiffPages) VALUES (?, ?, ?, ?, ?, ?, ?)"""
     params = (record_id, old_id, new_id, creator, 0, 0, 'PROCESSING')
     
@@ -85,7 +87,7 @@ def doc_mapping():
         thread.start()      
         return jsonify({"status": "success", "message": "版本比對開始執行！"})
     else:
-        return jsonify({"status": "error", "message": "比對過程中發生錯誤"})
+        return jsonify({"status": "error", "message": "比對過程發生錯誤"})
 
 @bp_mapping.route("/mapping_tool", methods=["POST"])
 @login_required
@@ -125,7 +127,6 @@ def mapping_tool():
         if execute_query(sql, (publish_status, record_id)):
             return jsonify({"success": True, "message": "發布狀態已更新"})
         return jsonify({"success": False, "message": "更新失敗"}), 500
-    return jsonify({"success": False, "message": "無效操作"}), 400
 
 
 @bp_mapping.route("/mapping/action", methods=["POST"])
@@ -154,11 +155,39 @@ def mapping_action():
         if os.path.exists(os.path.join(folder_path, filename)):
             return send_from_directory(folder_path, filename, as_attachment=True, download_name="差異比對結果.pdf")
         return send_from_directory(os.path.join(current_app.root_path, Mapping_Folder), filename, as_attachment=True, download_name="差異比對結果.pdf")
+
+    elif action == "batch_delete":
+        record_ids = request.form.getlist("doc_ids")
+        success_count = 0
+        for rid in record_ids:
+            sql_find_history = "SELECT ResultName FROM NoteTransferHistory WHERE MappingID = ?"
+            history_files = execute_query(sql_find_history, (rid,))
+            
+            for h in history_files:
+                h_path = os.path.join(Note_Folder, h['ResultName'])
+                if os.path.exists(h_path):
+                    os.remove(h_path) 
+            execute_query("DELETE FROM NoteTransferHistory WHERE MappingID = ?", (rid,))
+
+            project_folder = os.path.join(Mapping_Folder, rid)
+            csv_path = os.path.join(project_folder, f"{rid}.csv")
+            pdf_path = os.path.join(project_folder, f"{rid}.pdf")
+            if os.path.exists(csv_path):
+                os.remove(csv_path)
+            if os.path.exists(pdf_path):
+                os.remove(pdf_path)
+            if os.path.exists(project_folder) and not os.listdir(project_folder):
+                os.rmdir(project_folder)
+            if execute_query("DELETE FROM MappingRecord WHERE RecordID = ?", (rid,)):
+                success_count += 1
+        flash(f'成功刪除 {success_count} 筆紀錄', 'success')
+        return redirect(url_for('bp_mapping.mapping_page'))
+
+
     
     elif action == "load_csv":
         csv_name = request.form.get("csv_name")
         record_id = os.path.splitext(csv_name)[0]
-        
         folder_path = os.path.join(current_app.root_path, Mapping_Folder, record_id)
         file_path = os.path.join(folder_path, csv_name)
         if not os.path.exists(file_path):
@@ -167,7 +196,7 @@ def mapping_action():
         if os.path.exists(file_path):
             with open(file_path, "r", encoding="utf-8") as f:
                 return f.read()
-        return "找不到 CSV", 404
+        return "找不到CSV", 404
 
 @bp_mapping.route("/mapping/status/<record_id>", methods=["GET"])
 @login_required

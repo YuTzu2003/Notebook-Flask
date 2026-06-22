@@ -1,24 +1,9 @@
-/**
- * PDF Version Mapping Module
- * Handles form submission, background polling, and record management.
- */
-
-// ==========================================
-// 1. Core Mapping Operations
-// ==========================================
-
-/**
- * Submits the mapping form and starts the background comparison process.
- */
 async function runMapping() {
     const form = document.getElementById("MappingForm");
     const formData = new FormData(form);
     const submitBtn = document.querySelector("#MappingForm button[type='submit']");
     const originalText = submitBtn.innerHTML;
-    
-    // Set UI to loading state
     submitBtn.disabled = true;
-
     try {
         const res = await fetch("/mapping/doc_mapping", {
             method: "POST", 
@@ -35,27 +20,16 @@ async function runMapping() {
         }
     } catch (e) {
         console.error("Mapping Error:", e);
-        Swal.fire({ icon: "error", title: "系統錯誤", text: "系統逾時或連線中斷" });
+        Swal.fire({ icon: "error", title: "系統錯誤", text: "逾時或連線中斷" });
         resetButton(submitBtn, originalText);
     }
 }
 
-/**
- * Helper to reset the submit button state.
- */
 function resetButton(btn, originalText) {
     btn.disabled = false;
     btn.disabled = false;
 }
 
-// ==========================================
-// 2. Record Management Actions
-// ==========================================
-
-/**
- * Deletes a specific mapping record and its associated CSV file.
- * @param {string|number} recordId - The ID of the record to delete.
- */
 async function deleteMappingRecord(recordId) {
     const result = await Swal.fire({
         title: '確定要刪除嗎？',
@@ -90,11 +64,6 @@ async function deleteMappingRecord(recordId) {
     }
 }
 
-/**
- * Toggles the publish status of a mapping record.
- * @param {string|number} recordId - The ID of the record.
- * @param {HTMLInputElement} checkbox - The checkbox DOM element triggering the change.
- */
 async function toggleMappingPublish(recordId, checkbox) {
     const isPublish = checkbox.checked ? 1 : 0;
     
@@ -131,84 +100,70 @@ async function toggleMappingPublish(recordId, checkbox) {
     }
 }
 
-// ==========================================
-// 3. Background Polling Service
-// ==========================================
-
-/**
- * Automatically polls the server for status updates on records 
- * that are currently in the 'PROCESSING' state.
- */
-document.addEventListener("DOMContentLoaded", function() {
-    const processingBadges = document.querySelectorAll('.processing-badge');
-    
-    processingBadges.forEach(badge => {
-        const recordId = badge.getAttribute('data-id');
-        if (!recordId) return;
-        
-        const intervalId = setInterval(async () => {
-            try {
-                const res = await fetch(`/mapping/status/${recordId}`);
-                const data = await res.json();
-                
-                // If processing is finished (Status is determined and DiffPages is no longer PROCESSING)
-                if (data.success && data.DiffPages !== 'PROCESSING') {
-                    clearInterval(intervalId);
-                    
-                    // 1. Update the status badge HTML
-                    const newHtml = data.Status ? 
-                        `<span id="status-badge-${recordId}" class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-10 fw-normal">success</span>` : 
-                        `<span id="status-badge-${recordId}" class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-10 fw-normal">error</span>`;
-                    badge.outerHTML = newHtml;
-                    
-                    // 2. Unlock the Action Buttons
-                    const detailBtn = document.getElementById(`detail-btn-${recordId}`);
-                    if (detailBtn) detailBtn.disabled = false;
-                    
-                    const deleteBtn = document.getElementById(`delete-btn-${recordId}`);
-                    if (deleteBtn) deleteBtn.disabled = false;
-                    
-                    // 3. Unlock Publish Switch and Update UI State (Only if successful)
-                    const publishSwitch = document.getElementById(`publish-switch-${recordId}`);
-                    if (publishSwitch && data.Status) { 
-                        publishSwitch.disabled = false;
-                        publishSwitch.checked = true;
-                        
-                        const label = document.getElementById(`publish-label-${recordId}`);
-                        if (label) {
-                            label.textContent = "發布中";
-                            label.classList.remove("text-secondary");
-                            label.classList.add("text-primary-emphasis");
-                        }
-                    }
-                    
-                    // 4. Show Notification and Reload
-                    if (data.Status) {
-                        // 使用上方導覽列的通知鈴鐺，並寫入 localStorage
-                        if (typeof addNotif === 'function') {
-                            addNotif('success', `文件版本比對已成功完成`);
-                        }
-                        // 稍微延遲後重新整理
-                        setTimeout(() => location.reload(), 500);
-                    } else {
-                        // Error should be a prominent alert, not just a toast, to show information
-                        let errorMsg = data.DiffPages === 'ERROR' ? '背景比對時發生系統錯誤，請聯絡管理員。' : '比對過程遭遇問題或無法解析此文件。';
-                        Swal.fire({
-                            icon: 'error',
-                            title: '比對失敗',
-                            text: errorMsg,
-                            confirmButtonColor: '#0dcaf0'
-                        }).then(() => {
-                            if (typeof addNotif === 'function') {
-                                addNotif('error', `文件版本比對失敗`);
-                            }
-                            location.reload();
-                        });
-                    }
-                }
-            } catch (e) {
-                console.error("Status Polling Error for ID:", recordId, e);
-            }
-        }, 3000); // Poll every 3 seconds
-    });
+let allSelected = false;
+document.addEventListener('DOMContentLoaded', () => {
+    const selectAllBtn = document.getElementById('selectAllBtn');
+    if (selectAllBtn) {
+        selectAllBtn.addEventListener('click', function() {
+            allSelected = !allSelected;
+            const checkboxes = document.querySelectorAll('.doc-checkbox');
+            checkboxes.forEach(cb => cb.checked = allSelected);
+            this.textContent = allSelected ? '取消全選' : '全選';
+        });
+    }
 });
+
+function submitBatch(action) {
+    const checkboxes = document.querySelectorAll('.doc-checkbox:checked');
+    if (checkboxes.length === 0) {
+        Swal.fire({
+            icon: 'warning',
+            title: '未選取任何紀錄',
+            showConfirmButton: false,
+            timer: 2000
+        });
+        return;
+    }
+
+    if (action === 'batch_delete') {
+        Swal.fire({
+            title: '確定要刪除選取的紀錄嗎？',
+            text: '此操作會一併刪除相關的轉移紀錄與檔案！',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: '確定刪除',
+            cancelButtonText: '取消'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                executeBatchRequest(action, checkboxes);
+            }
+        });
+    } else {
+        executeBatchRequest(action, checkboxes);
+    }
+}
+
+function executeBatchRequest(action, checkboxes) {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/mapping/action';
+    
+    const actionInput = document.createElement('input');
+    actionInput.type = 'hidden';
+    actionInput.name = 'action';
+    actionInput.value = action;
+    form.appendChild(actionInput);
+
+    checkboxes.forEach(cb => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'doc_ids';
+        input.value = cb.value;
+        form.appendChild(input);
+    });
+
+    document.body.appendChild(form);
+    form.submit();
+}

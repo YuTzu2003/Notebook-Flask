@@ -31,66 +31,6 @@ async function runMigrate() {
     }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-    const processingBadges = document.querySelectorAll('.processing-badge');
-    
-    processingBadges.forEach(badge => {
-        const transferId = badge.getAttribute('data-transfer-id');
-        if (!transferId) return;
-
-        const interval = setInterval(async () => {
-            try {
-                let res = await fetch(`/notes/status/${transferId}`);
-                let data = await res.json();
-
-                if (data.success && data.ResultName !== 'PROCESSING') {
-                    clearInterval(interval);
-                    
-                    const isSuccess = data.ResultName !== 'ERROR';
-                    
-                    const container = document.getElementById(`status-container-${transferId}`);
-                    if (container) {
-                        container.innerHTML = isSuccess ? 
-                            `<span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-10 fw-normal">success</span>` : 
-                            `<span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-10 fw-normal">error</span>`;
-                    }
-                    
-                    const downloadBtn = document.getElementById(`download-btn-${transferId}`);
-                    if (downloadBtn && isSuccess) {
-                        downloadBtn.classList.remove('disabled');
-                        downloadBtn.href = `/download_pdf/${data.ResultName}`;
-                    }
-
-                    const deleteBtn = document.getElementById(`delete-btn-${transferId}`);
-                    if (deleteBtn) deleteBtn.classList.remove('disabled');
-
-                    // Show Notification and Reload
-                    if (isSuccess) {
-                        if (typeof addNotif === 'function') {
-                            addNotif('success', `一筆筆記轉移已成功完成`);
-                        }
-                        setTimeout(() => location.reload(), 500);
-                    } else {
-                        Swal.fire({
-                            icon: 'error',
-                            title: '轉移失敗',
-                            text: '背景轉移時發生錯誤或無法解析此文件。',
-                            confirmButtonColor: '#0dcaf0'
-                        }).then(() => {
-                            if (typeof addNotif === 'function') {
-                                addNotif('error', `一筆筆記轉移失敗`);
-                            }
-                            location.reload();
-                        });
-                    }
-                }
-            } catch (e) {
-                console.error("Status Polling Error for ID:", transferId, e);
-            }
-        }, 3000); // 每 3 秒輪詢一次
-    });
-});
-
 async function deleteNote(transferId) {
     const result = await Swal.fire({
         title: '確定要刪除嗎？',
@@ -105,7 +45,7 @@ async function deleteNote(transferId) {
 
     if (result.isConfirmed) {
         try {
-            const res = await fetch("/notes_tool", {
+            const res = await fetch("/notes/action", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ action: "delete", transfer_id: transferId })
@@ -128,4 +68,72 @@ async function deleteNote(transferId) {
             Swal.fire('錯誤', '系統連線異常', 'error');
         }
     }
+}
+
+let allSelected = false;
+document.addEventListener('DOMContentLoaded', () => {
+    const selectAllBtn = document.getElementById('selectAllBtn');
+    if (selectAllBtn) {
+        selectAllBtn.addEventListener('click', function() {
+            allSelected = !allSelected;
+            const checkboxes = document.querySelectorAll('.doc-checkbox');
+            checkboxes.forEach(cb => cb.checked = allSelected);
+            this.textContent = allSelected ? '取消全選' : '全選';
+        });
+    }
+});
+
+function submitBatch(action) {
+    const checkboxes = document.querySelectorAll('.doc-checkbox:checked');
+    if (checkboxes.length === 0) {
+        Swal.fire({
+            icon: 'warning',
+            title: '未選取任何紀錄',
+            showConfirmButton: false,
+            timer: 2000
+        });
+        return;
+    }
+
+    if (action === 'batch_delete') {
+        Swal.fire({
+            title: '確定要刪除選取的紀錄嗎？',
+            text: '刪除後將無法復原。',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: '確定刪除',
+            cancelButtonText: '取消'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                executeBatchRequest(action, checkboxes);
+            }
+        });
+    } else {
+        executeBatchRequest(action, checkboxes);
+    }
+}
+
+function executeBatchRequest(action, checkboxes) {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/notes/action';
+    
+    const actionInput = document.createElement('input');
+    actionInput.type = 'hidden';
+    actionInput.name = 'action';
+    actionInput.value = action;
+    form.appendChild(actionInput);
+
+    checkboxes.forEach(cb => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'doc_ids';
+        input.value = cb.value;
+        form.appendChild(input);
+    });
+
+    document.body.appendChild(form);
+    form.submit();
 }

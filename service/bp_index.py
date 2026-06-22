@@ -72,3 +72,21 @@ def doc_tool():
     except Exception as e:
         print(f"doc_tool Error: {e}")
         return jsonify({"success": False, "message": f"error: {str(e)}"}), 500
+
+@bp_index.route("/api/user_processing_tasks")
+@login_required
+def user_processing_tasks():
+    user_id = session.get("ID")
+    
+    # Mapping records
+    sql_mapping = "SELECT RecordID FROM MappingRecord WHERE Creator = ? AND DiffPages = 'PROCESSING'"
+    mapping_tasks = execute_query(sql_mapping, (user_id,))
+    
+    # Note Transfer records
+    sql_notes = "SELECT TransferID FROM Hospital.dbo.NoteTransferHistory WHERE UserID = ? AND ResultName = 'PROCESSING'"
+    note_tasks = execute_query(sql_notes, (user_id,))
+    
+    return jsonify({
+        "mapping": [r['RecordID'] for r in mapping_tasks],
+        "notes": [r['TransferID'] for r in note_tasks]
+    })

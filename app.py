@@ -51,6 +51,6 @@ atexit.register(lambda: scheduler.shutdown())
 logging.info("APScheduler is running: Automatic database backup is performed daily at 02:00.")
 
 if __name__ == "__main__":
-    flask_port = int(os.environ.get("FLASK_PORT", 5000))
+    flask_port = int(os.environ.get("FLASK_PORT"))
     logging.info(f"Waitress server starting on port {flask_port}...")
     serve(app, host="0.0.0.0", port=flask_port, threads=30)

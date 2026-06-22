@@ -75,7 +75,7 @@
                         
                         <div class="input-group input-group-sm" style="width: 100px;">
                             <input type="number" id="jumpPage" class="form-control text-center" min="1" placeholder="#">
-                            <button class="btn btn-outline-secondary" onclick="jumpToPage()">Go</button>
+                            <button class="btn btn-outline-dark" onclick="jumpToPage()">Go</button>
                         </div>
                     </div>
 
@@ -107,18 +107,18 @@
                             <input type="number" id="mainSize" value="16" class="form-control form-control-sm text-center shadow-sm" oninput="updateStyle('size')" style="width:60px" title="大小/粗細">
                             <input type="color" id="mainColor" value="#ffff00" class="form-control form-control-color form-control-sm border-0 shadow-sm" oninput="updateStyle('color')" title="顏色">
                         </div>
-                        <button id="boldBtn" class="btn btn-outline-secondary btn-sm shadow-sm" onclick="toggleBold()"><i class="bi bi-type-bold"></i></button>
+                        <button id="boldBtn" class="btn btn-outline-dark btn-sm shadow-sm" onclick="toggleBold()"><i class="bi bi-type-bold"></i></button>
                         <button id="underlineBtn" class="btn btn-outline-dark btn-sm shadow-sm" onclick="toggleUnderlineMode()" title="底線模式：選取文字自動加底線">
                             <i class="bi bi-type-underline"></i>
                         </button>
                     </div>
                     <div class="vr mx-1"></div>
                     <div class="btn-group shadow-sm">
-                        <button id="highlightBtn" class="btn btn-outline-secondary btn-sm px-3 shadow-sm" onclick="toggleHighlightMode()"><i class="bi bi-highlighter"></i>螢光筆</button>
-                        <button id="drawBtn" class="btn btn-outline-secondary btn-sm px-3" onclick="toggleDrawMode()"><i class="bi bi-pen"></i> 繪圖</button>
-                        <button id="textBtn" class="btn btn-outline-secondary btn-sm px-3" onclick="addText()"><i class="bi bi-type"></i> 文字</button>
-                        <button id="stickyBtn" class="btn btn-outline-secondary btn-sm px-3" onclick="toggleStickyMode()"><i class="bi bi-chat-square-dots"></i> 便籤</button>
-                        <button class="btn btn-outline-secondary btn-sm px-3" onclick="document.getElementById('imgInput').click()"><i class="bi bi-image"></i> 圖片</button>
+                        <button id="highlightBtn" class="btn btn-outline-dark btn-sm px-3 shadow-sm" onclick="toggleHighlightMode()"><i class="bi bi-highlighter"></i>螢光筆</button>
+                        <button id="drawBtn" class="btn btn-outline-dark btn-sm px-3" onclick="toggleDrawMode()"><i class="bi bi-pen"></i> 繪圖</button>
+                        <button id="textBtn" class="btn btn-outline-dark btn-sm px-3" onclick="addText()"><i class="bi bi-type"></i> 文字</button>
+                        <button id="stickyBtn" class="btn btn-outline-dark btn-sm px-3" onclick="toggleStickyMode()"><i class="bi bi-chat-square-dots"></i> 便籤</button>
+                        <button class="btn btn-outline-dark btn-sm px-3" onclick="document.getElementById('imgInput').click()"><i class="bi bi-image"></i> 圖片</button>
                         <div class="btn-group dropup shadow-sm">
                             <button type="button" class="btn btn-outline-primary btn-sm px-3 dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" data-bs-auto-close="outside">Ω 符號</button>
                             <div class="dropdown-menu p-2 mb-1 shadow" style="width: 320px;">
@@ -129,8 +129,8 @@
                     </div>
                     <input type="file" id="imgInput" hidden accept="image/*">
                     <div class="vr mx-1"></div>
-                    <button id="selectObjBtn" class="btn btn-outline-secondary btn-sm px-3 shadow-sm" onclick="toggleSelectObjectMode()"><i class="bi bi-cursor-fill"></i></button>
-                    <button class="btn btn-outline-secondary btn-sm shadow-sm px-3" onclick="selectAll()" title="全選 (Ctrl+A)">全選</button>
+                    <button id="selectObjBtn" class="btn btn-outline-dark btn-sm px-3 shadow-sm" onclick="toggleSelectObjectMode()"><i class="bi bi-cursor-fill"></i></button>
+                    <button class="btn btn-outline-dark btn-sm shadow-sm px-3" onclick="selectAll()" title="全選 (Ctrl+A)">全選</button>
                     <button class="btn btn-outline-danger btn-sm shadow-sm px-3" onclick="deleteObj()">刪除</button>
                 </div>
             </div>
