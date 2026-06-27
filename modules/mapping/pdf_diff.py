@@ -9,14 +9,10 @@ def extract_words(page: fitz.Page) -> List[Dict]:
     words = []
     word_list = page.get_text("words")
     for word in word_list:
-        words.append({
-            "text": word[4],
-            "rect": fitz.Rect(word[:4])
-        })
+        words.append({"text": word[4],"rect": fitz.Rect(word[:4])})
     return words
 
 def is_page_content_identical(page1: fitz.Page, page2: fitz.Page) -> bool:
-    """快速檢查兩頁的文字是否完全相同（忽略空白）"""
     text1 = re.sub(r'\s+', '', page1.get_text())
     text2 = re.sub(r'\s+', '', page2.get_text())
     return text1 == text2
@@ -24,10 +20,8 @@ def is_page_content_identical(page1: fitz.Page, page2: fitz.Page) -> bool:
 def group_and_merge_rects(rects: List[fitz.Rect], line_height_threshold: float = 5.0, horizontal_gap_threshold: float = 20.0) -> List[fitz.Rect]:
     if not rects:
         return []
-    
-    # 依 top 座標 (y0) 排序，便於分行
-    sorted_rects = sorted(rects, key=lambda r: r.y0)
-    
+
+    sorted_rects = sorted(rects, key=lambda r: r.y0)  
     lines = []
     current_line = [sorted_rects[0]]
     
@@ -41,11 +35,9 @@ def group_and_merge_rects(rects: List[fitz.Rect], line_height_threshold: float =
     
     merged_rects = []
     for line in lines:
-        # 同行內依左座標 (x0) 排序
         line = sorted(line, key=lambda r: r.x0)
         curr_rect = line[0]
         for r in line[1:]:
-            # 若水平有重疊或間距小於閾值，則合併
             if r.x0 <= curr_rect.x1 + horizontal_gap_threshold:
                 curr_rect = curr_rect | r
             else:
@@ -55,25 +47,11 @@ def group_and_merge_rects(rects: List[fitz.Rect], line_height_threshold: float =
         
     return merged_rects
 
-def highlight_and_bookmark_diffs(
-    base_pdf_path: str,
-    target_pdf_path: str,
-    mapping: Dict[int, int],
-    output_path: str,
-    highlight_color: Tuple[float, float, float] = (1, 0, 0)
-) -> Tuple[List[int], str]:
-    """
-    根據 mapping 比較兩個 PDF 的內容。
-    將新版有差異的地方加上紅色高亮，並加入書籤。
-    儲存為 output_path。
-    回傳: (有差異的頁碼清單, 產出的PDF路徑)
-    """
+def highlight_and_bookmark_diffs(base_pdf_path: str,target_pdf_path: str,mapping: Dict[int, int],output_path: str,highlight_color: Tuple[float, float, float] = (1, 0, 0)) -> Tuple[List[int], str]:
     base_doc = fitz.open(base_pdf_path)
     target_doc = fitz.open(target_pdf_path)
     pages_with_diffs = []
-
     toc = target_doc.get_toc()
-
     for old_idx, new_idx in mapping.items():
         if old_idx >= len(base_doc) or new_idx >= len(target_doc):
             continue
@@ -81,7 +59,6 @@ def highlight_and_bookmark_diffs(
         base_page = base_doc[old_idx]
         test_page = target_doc[new_idx]
 
-        # 效能優化：快速比對
         if is_page_content_identical(base_page, test_page):
             continue
 
@@ -104,8 +81,6 @@ def highlight_and_bookmark_diffs(
         if has_diff:
             pages_with_diffs.append(new_idx + 1)
             toc.append([1, f"內容差異 (原 p.{old_idx + 1} -> 新 p.{new_idx + 1})", new_idx + 1])
-
-            # 效能優化：若修改詞數佔整頁 60% 以上，標註整頁紅框線，避免逐字畫高亮导致崩潰
             if len(test_words) > 0 and len(diff_rects) / len(test_words) > 0.6:
                 rect = fitz.Rect(10, 10, test_page.rect.width - 10, test_page.rect.height - 10)
                 highlight = test_page.add_rect_annot(rect)

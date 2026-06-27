@@ -7,7 +7,7 @@ import uuid
 import shutil
 from modules.auth import login_required
 from modules.db import execute_query
-from modules.pdf_annotation_migrate import migrate_all_to_pdf
+from modules.move_annotation.pdf_annotation_migrate import migrate_all_to_pdf
 import threading
 import time
 import os

@@ -5,7 +5,7 @@ import uuid
 from pandas import io
 from modules.auth import login_required
 from modules.db import execute_query
-from modules.mapping import UseMapping
+from modules.mapping.mapping import UseMapping
 import threading
 
 bp_mapping = Blueprint('bp_mapping', __name__)

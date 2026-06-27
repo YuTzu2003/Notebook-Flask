@@ -6,7 +6,7 @@ import re
 from rapidfuzz import process, fuzz
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from modules.pdf_diff import highlight_and_bookmark_diffs
+from modules.mapping.pdf_diff import highlight_and_bookmark_diffs
 
 # 目錄比對
 def extract_toc(pdf_path, toc_pages="auto", offset_input="auto", max_search_pages=15):
