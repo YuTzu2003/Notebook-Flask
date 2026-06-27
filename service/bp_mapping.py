@@ -1,4 +1,3 @@
-import zipfile
 from flask import Blueprint, render_template, request, jsonify, send_file, session, flash, redirect, url_for, send_from_directory, current_app
 import os
 import uuid
@@ -9,6 +8,8 @@ from modules.mapping.mapping import UseMapping as process_and_match_pdfs
 from modules.mapping.pdf_diff import highlight_and_bookmark_diffs
 import threading
 import json
+import fitz
+import re
 
 bp_mapping = Blueprint('bp_mapping', __name__)
 VERSION_Folder = 'tasks/docVersion'
@@ -32,7 +33,7 @@ def mapping_page():
     for row in history:
         rid = row['RecordID']
         json_path = os.path.join(current_app.root_path, Mapping_Folder, rid, f"{rid}.json")
-        row['DiffPages'] = 'ERROR'  # default fallback
+        row['DiffPages'] = 'ERROR' 
         if os.path.exists(json_path):
             try:
                 with open(json_path, 'r', encoding='utf-8') as jf:
@@ -51,8 +52,6 @@ def mapping_page():
 mapping_semaphore = threading.Semaphore(3)
 
 def get_blanks(pdf_path, header_ratio=0.1, footer_ratio=0.1):
-    import fitz
-    import re
     doc = fitz.open(pdf_path)
     blanks = []
     for i, page in enumerate(doc):
@@ -68,40 +67,25 @@ def run_mapping_background(app, record_id, old_pdf_path, new_pdf_path, csv_resul
     with app.app_context():
         mapping_semaphore.acquire()
         try:
-            # 1. 取得舊版與原始新版的空白頁資訊
+            # 取得舊版與新版空白頁碼
             old_blanks = get_blanks(old_pdf_path)
             new_blanks = get_blanks(new_pdf_path)
 
-            # 2. 執行比對及空白頁插入流程 (產生 csv_result 與 temp_pdf_path)
+            # 執行比對及空白頁插入
             project_folder = os.path.dirname(csv_result)
-            temp_pdf_path = os.path.join(project_folder, f"{record_id}_temp.pdf")
-            result_df = process_and_match_pdfs(old_pdf_path, new_pdf_path, csv_result, temp_pdf_path)
-
-            # 3. 建立 0-based mapping 給 highlight_and_bookmark_diffs
+            result_df = process_and_match_pdfs(old_pdf_path, new_pdf_path, csv_result, template_pdf_path)
             content_rows = result_df[result_df['Mode'].str.contains("Local|Global", na=False)]
             mapping_dict = {
                 int(row["Old_Page"]) - 1: int(row["New_Page"]) - 1
                 for _, row in content_rows.iterrows()
-                if row["New_Page"] is not None
-            }
+                if row["New_Page"] is not None}
 
-            # 4. 呼叫 highlight_and_bookmark_diffs 比對並標記差異 (以 temp_pdf_path 為基礎，產生 template_pdf_path)
-            try:
-                diff_pages, _ = highlight_and_bookmark_diffs(old_pdf_path, temp_pdf_path, mapping_dict, template_pdf_path)
-            except Exception as e:
-                print(f"diff error: {e}")
-                diff_pages = []
-
-            # 移除臨時產生的 temp_pdf_path
-            if os.path.exists(temp_pdf_path):
-                try:
-                    os.remove(temp_pdf_path)
-                except Exception as ce:
-                    print("Error removing temp PDF:", ce)
-
+            # 差異比對
+            diff_pdf_path = os.path.join(project_folder, f"{record_id}_diff.pdf")
+            diff_pages, _ = highlight_and_bookmark_diffs(old_pdf_path, template_pdf_path, mapping_dict, diff_pdf_path)
             is_success = 1 if not result_df.empty else 0
 
-            # 5. 儲存 JSON 比對中繼資料
+            # 儲存JSON比對(空白頁碼、差異比對頁碼)
             old_id = os.path.splitext(os.path.basename(old_pdf_path))[0]
             new_id = os.path.splitext(os.path.basename(new_pdf_path))[0]
             db_files = execute_query("SELECT ID, FileName, Version FROM DocVersion WHERE ID IN (?, ?)", (old_id, new_id))
@@ -277,16 +261,14 @@ def mapping_action():
         return send_from_directory(os.path.join(current_app.root_path, Mapping_Folder), filename, as_attachment=True, download_name=filename)
 
     elif action == "download_diff":
-        filename = f"{record_id}_template.pdf"
+        filename = f"{record_id}_diff.pdf"
         folder_path = os.path.join(current_app.root_path, Mapping_Folder, record_id)
         if os.path.exists(os.path.join(folder_path, filename)):
             return send_from_directory(folder_path, filename, as_attachment=True, download_name="差異比對結果.pdf")
-        # Fallback for old records
         old_filename = f"{record_id}.pdf"
         if os.path.exists(os.path.join(folder_path, old_filename)):
             return send_from_directory(folder_path, old_filename, as_attachment=True, download_name="差異比對結果.pdf")
         return send_from_directory(os.path.join(current_app.root_path, Mapping_Folder), filename, as_attachment=True, download_name="差異比對結果.pdf")
-
 
     elif action == "batch_delete":
         record_ids = request.form.getlist("doc_ids")
@@ -320,9 +302,7 @@ def mapping_action():
                 success_count += 1
         flash(f'成功刪除 {success_count} 筆紀錄', 'success')
         return redirect(url_for('bp_mapping.mapping_page'))
-
-
-    
+     
     elif action == "load_csv":
         csv_name = request.form.get("csv_name")
         record_id = os.path.splitext(csv_name)[0]
@@ -342,7 +322,6 @@ def mapping_status(record_id):
     sql = "SELECT Status FROM MappingRecord WHERE RecordID = ?"
     result = execute_query(sql, (record_id,))
     if result:
-        # Read status from json file
         status_str = 'ERROR'
         rid = record_id
         json_path = os.path.join(current_app.root_path, Mapping_Folder, rid, f"{rid}.json")

@@ -1,6 +1,5 @@
 import io
 import zipfile
-
 from flask import Blueprint, render_template, request, jsonify, send_file, session, send_from_directory, current_app
 import os
 import uuid
@@ -11,6 +10,7 @@ from modules.move_annotation.pdf_annotation_migrate import migrate_all_to_pdf
 import threading
 import time
 import os
+import json
 
 migrate_semaphore = threading.Semaphore(3)
 bp_notes = Blueprint('bp_notes', __name__)
@@ -61,8 +61,7 @@ def notes_page():
                     LEFT JOIN DocVersion V_Old ON M.OldDocID = V_Old.ID
                     LEFT JOIN DocVersion V_New ON M.NewDocID = V_New.ID
                     WHERE H.UserID = ?
-                    ORDER BY {order_col} {order_dir}
-                """
+                    ORDER BY {order_col} {order_dir}"""
     history = execute_query(sql_history, (user_id,))
     return render_template("notes.html", mapping_history=mapping_history, history=history,current_sort=sort_by)
 
@@ -80,11 +79,13 @@ def migrate_pdf_api():
         sql = """SELECT MappingRecord.NewDocID FROM MappingRecord WHERE MappingRecord.RecordID = ?"""
         TransferID = "note" + uuid.uuid4().hex[:8]
         row = execute_query(sql, (mapping_id,))[0]
-        target_new_pdf_path = os.path.join(VERSION_Folder, f"{row['NewDocID']}.pdf")
-        mapping_csv_path = os.path.join(Mapping_Folder, mapping_id, f"{mapping_id}.csv")
+        target_new_pdf_path = os.path.join(Mapping_Folder, mapping_id, f"{mapping_id}_template.pdf")
+        if not os.path.exists(target_new_pdf_path):
+            target_new_pdf_path = os.path.join(Mapping_Folder, mapping_id, f"{mapping_id}.pdf")
+            if not os.path.exists(target_new_pdf_path):
+                target_new_pdf_path = os.path.join(VERSION_Folder, f"{row['NewDocID']}.pdf")
         
-        # 從 JSON 中讀取 diff_pages (如有)
-        import json
+        mapping_csv_path = os.path.join(Mapping_Folder, mapping_id, f"{mapping_id}.csv")
         json_path = os.path.join(Mapping_Folder, mapping_id, f"{mapping_id}.json")
         diff_pages_str = ""
         if os.path.exists(json_path):
@@ -111,12 +112,10 @@ def migrate_pdf_api():
         # 先寫入資料庫，標記為 PROCESSING
         sql_insert = """INSERT INTO Hospital.dbo.NoteTransferHistory (TransferID, UserID, MappingID, SourceFileName, ResultName) VALUES (?, ?, ?, ?, ?)"""
         execute_query(sql_insert, (TransferID, user_id, mapping_id, pdf_with_notes.filename, 'PROCESSING'))
-
         app_obj = current_app._get_current_object()
         thread = threading.Thread(target=run_migrate_background, args=(app_obj, TransferID, user_pdf_path, target_new_pdf_path, mapping_csv_path, output_path, diff_pages_str, output_filename))
         thread.start()
         return jsonify({"status": "success", "message": "開始執行！"})
-
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
   

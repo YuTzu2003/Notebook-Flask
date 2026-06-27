@@ -298,9 +298,6 @@ def process_and_match_pdfs(old_pdf_path, new_pdf_path, output_excel, output_pdf)
         print(f"{mode}: {cnt}")
     return final_df
 
-
-
-# Main
 if __name__ == "__main__":
     old_pdf = r"D:\YLH\notebook_flask\tasks\docVersion\doc996b418c.pdf"
     new_pdf = r"D:\YLH\notebook_flask\tasks\docVersion\doc52d059af.pdf"

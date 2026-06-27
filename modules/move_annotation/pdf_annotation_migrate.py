@@ -378,8 +378,14 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
     doc_old, doc_new = fitz.open(old_pdf), fitz.open(new_pdf)   
     df = pd.read_csv(csv_mapping, encoding="utf-8-sig")
     df.columns = df.columns.str.strip()
-    mapping = {int(r["Old_Page"]) - 1: int(r["Matched_New_Page"]) - 1 for _, r in df.iterrows()}
-    reverse_mapping = {int(r["Matched_New_Page"]) - 1: int(r["Old_Page"]) - 1 for _, r in df.iterrows()}
+    mapping = {}
+    reverse_mapping = {}
+    for _, r in df.iterrows():
+        if pd.notna(r.get("New_Page")) and str(r.get("New_Page")).strip() != "":
+            old_p = int(r["Old_Page"]) - 1
+            new_p = int(r["New_Page"]) - 1
+            mapping[old_p] = new_p
+            reverse_mapping[new_p] = old_p
     old_sections = get_pdf_sections(doc_old)
     new_sections = get_pdf_sections(doc_new)
 
