@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, jsonify, session
+from flask import Blueprint, render_template, request, jsonify, session, current_app
 import os
 import json
 import fitz
@@ -7,8 +7,8 @@ from modules.db import execute_query
 
 bp_index = Blueprint('bp_index', __name__)
 
-UPLOAD_Folder = "static/uploads"
-NOTE_Folder = "static/annotation"
+UPLOAD_Folder = "tasks/uploads"
+NOTE_Folder = "tasks/annotation"
 
 @bp_index.route("/")
 @login_required
@@ -79,14 +79,29 @@ def user_processing_tasks():
     user_id = session.get("ID")
     
     # Mapping records
-    sql_mapping = "SELECT RecordID FROM MappingRecord WHERE Creator = ? AND DiffPages = 'PROCESSING'"
+    sql_mapping = "SELECT RecordID FROM MappingRecord WHERE Creator = ? AND Status = 0"
     mapping_tasks = execute_query(sql_mapping, (user_id,))
+    
+    processing_ids = []
+    for r in mapping_tasks:
+        rid = r['RecordID']
+        json_path = os.path.join(current_app.root_path, "tasks/docMapResult", rid, f"{rid}.json")
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, 'r', encoding='utf-8') as jf:
+                    data = json.load(jf)
+                    if data.get("status") == "PROCESSING":
+                        processing_ids.append(rid)
+            except Exception:
+                pass
+        else:
+            processing_ids.append(rid)
     
     # Note Transfer records
     sql_notes = "SELECT TransferID FROM Hospital.dbo.NoteTransferHistory WHERE UserID = ? AND ResultName = 'PROCESSING'"
     note_tasks = execute_query(sql_notes, (user_id,))
     
     return jsonify({
-        "mapping": [r['RecordID'] for r in mapping_tasks],
+        "mapping": processing_ids,
         "notes": [r['TransferID'] for r in note_tasks]
     })

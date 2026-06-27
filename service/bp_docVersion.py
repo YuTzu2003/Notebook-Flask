@@ -5,7 +5,7 @@ import fitz
 from modules.db import execute_query
 
 bp_docVersion = Blueprint('bp_docVersion', __name__)
-VERSION_Folder = 'static/docVersion'
+VERSION_Folder = 'tasks/docVersion'
 
 @bp_docVersion.route('/docVersion', methods=['GET', 'POST'])
 def docVersion():

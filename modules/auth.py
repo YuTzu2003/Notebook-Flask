@@ -6,7 +6,7 @@ from datetime import datetime
 # from werkzeug.security import check_password_hash
 from modules.db import get_conn
 
-LOG_FILE_PATH = os.path.join("static", "login_history.json")
+LOG_FILE_PATH = os.path.join("tasks", "login_history.json")
 
 def log_login_attempt(emp_id, status, message, ip_address):
     os.makedirs(os.path.dirname(LOG_FILE_PATH), exist_ok=True)
@@ -160,8 +160,8 @@ def manage_user():
         user_docs = cursor.fetchall()
 
         for row in user_docs:
-            pdf_path = f"static/uploads/{str(row[1])}"
-            json_path = f"static/annotation/{str(row[0])}.json"
+            pdf_path = f"tasks/uploads/{str(row[1])}"
+            json_path = f"tasks/annotation/{str(row[0])}.json"
             
             if os.path.exists(pdf_path):
                 os.remove(pdf_path)

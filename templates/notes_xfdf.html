@@ -72,7 +72,7 @@
                         title:"轉移完成",
                         confirmButtonText:"下載檔案"
                     }).then(()=>{
-                        window.location.href = "/static/pdf_xfdf/" + data.filename
+                        window.location.href = "/tasks/pdf_xfdf/" + data.filename
                     })                
                 } else {
                     Swal.fire({icon:"error", title:"轉移失敗"})

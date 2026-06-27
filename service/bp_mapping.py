@@ -5,13 +5,15 @@ import uuid
 from pandas import io
 from modules.auth import login_required
 from modules.db import execute_query
-from modules.mapping.mapping import UseMapping
+from modules.mapping.mapping import UseMapping as process_and_match_pdfs
+from modules.mapping.pdf_diff import highlight_and_bookmark_diffs
 import threading
+import json
 
 bp_mapping = Blueprint('bp_mapping', __name__)
-VERSION_Folder = 'static/docVersion'
-Mapping_Folder = "static/docMapResult"
-Note_Folder = 'static/note'
+VERSION_Folder = 'tasks/docVersion'
+Mapping_Folder = "tasks/docMapResult"
+Note_Folder = 'tasks/note'
 
 @bp_mapping.route("/mapping", methods=["GET"])
 def mapping_page():
@@ -19,36 +21,135 @@ def mapping_page():
     docVersion = execute_query(sql)
     sql_history = """
                     SELECT  MappingRecord.RecordID, Users.Name, DocVersion_Old.FileName AS OldFileName, DocVersion_Old.Version AS OldVersion, 
-                            DocVersion_New.FileName AS NewFileName, DocVersion_New.Version AS NewVersion,MappingRecord.Status, dbo.MappingRecord.CreateTime, 
-                            MappingRecord.IsPublish, MappingRecord.DiffPages
+                            DocVersion_New.FileName AS NewFileName, DocVersion_New.Version AS NewVersion, MappingRecord.Status, dbo.MappingRecord.CreateTime, 
+                            MappingRecord.IsPublish
                     FROM MappingRecord INNER JOIN Users ON MappingRecord.Creator = Users.ID 
                     LEFT OUTER JOIN DocVersion AS DocVersion_Old ON MappingRecord.OldDocID = DocVersion_Old.ID 
                     LEFT OUTER JOIN DocVersion AS DocVersion_New ON MappingRecord.NewDocID = DocVersion_New.ID
                     ORDER BY dbo.MappingRecord.CreateTime DESC
                 """
     history = execute_query(sql_history)
+    for row in history:
+        rid = row['RecordID']
+        json_path = os.path.join(current_app.root_path, Mapping_Folder, rid, f"{rid}.json")
+        row['DiffPages'] = 'ERROR'  # default fallback
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, 'r', encoding='utf-8') as jf:
+                    data = json.load(jf)
+                    row['DiffPages'] = data.get("status", "ERROR")
+            except Exception:
+                pass
+        else:
+            if row['Status'] == 1:
+                row['DiffPages'] = 'SUCCESS'
+            else:
+                row['DiffPages'] = 'PROCESSING'
     return render_template('mapping.html',files=docVersion,history=history)
 
 
 mapping_semaphore = threading.Semaphore(3)
 
-def run_mapping_background(app, record_id, old_pdf_path, new_pdf_path, csv_result, diff_pdf_path):
+def get_blanks(pdf_path, header_ratio=0.1, footer_ratio=0.1):
+    import fitz
+    import re
+    doc = fitz.open(pdf_path)
+    blanks = []
+    for i, page in enumerate(doc):
+        w, h = page.rect.width, page.rect.height
+        clip = fitz.Rect(0, h * header_ratio, w, h * (1 - footer_ratio))
+        text = re.sub(r'\s+', ' ', page.get_text("text", clip=clip)).strip()
+        if not text:
+            blanks.append(i + 1)
+    doc.close()
+    return blanks
+
+def run_mapping_background(app, record_id, old_pdf_path, new_pdf_path, csv_result, template_pdf_path):
     with app.app_context():
         mapping_semaphore.acquire()
         try:
-            result_df, diff_pages = UseMapping(old_pdf_path, new_pdf_path, csv_result, diff_pdf_path)
+            # 1. 取得舊版與原始新版的空白頁資訊
+            old_blanks = get_blanks(old_pdf_path)
+            new_blanks = get_blanks(new_pdf_path)
+
+            # 2. 執行比對及空白頁插入流程 (產生 csv_result 與 temp_pdf_path)
+            project_folder = os.path.dirname(csv_result)
+            temp_pdf_path = os.path.join(project_folder, f"{record_id}_temp.pdf")
+            result_df = process_and_match_pdfs(old_pdf_path, new_pdf_path, csv_result, temp_pdf_path)
+
+            # 3. 建立 0-based mapping 給 highlight_and_bookmark_diffs
+            content_rows = result_df[result_df['Mode'].str.contains("Local|Global", na=False)]
+            mapping_dict = {
+                int(row["Old_Page"]) - 1: int(row["New_Page"]) - 1
+                for _, row in content_rows.iterrows()
+                if row["New_Page"] is not None
+            }
+
+            # 4. 呼叫 highlight_and_bookmark_diffs 比對並標記差異 (以 temp_pdf_path 為基礎，產生 template_pdf_path)
+            try:
+                diff_pages, _ = highlight_and_bookmark_diffs(old_pdf_path, temp_pdf_path, mapping_dict, template_pdf_path)
+            except Exception as e:
+                print(f"diff error: {e}")
+                diff_pages = []
+
+            # 移除臨時產生的 temp_pdf_path
+            if os.path.exists(temp_pdf_path):
+                try:
+                    os.remove(temp_pdf_path)
+                except Exception as ce:
+                    print("Error removing temp PDF:", ce)
+
             is_success = 1 if not result_df.empty else 0
-            diff_pages_str = ",".join(map(str, diff_pages)) if diff_pages else ""
+
+            # 5. 儲存 JSON 比對中繼資料
+            old_id = os.path.splitext(os.path.basename(old_pdf_path))[0]
+            new_id = os.path.splitext(os.path.basename(new_pdf_path))[0]
+            db_files = execute_query("SELECT ID, FileName, Version FROM DocVersion WHERE ID IN (?, ?)", (old_id, new_id))
+            file_info = {str(row['ID']): f"{row['FileName']} (v{row['Version']})" for row in db_files}
+            old_name = file_info.get(str(old_id), f"{old_id}.pdf")
+            new_name = file_info.get(str(new_id), f"{new_id}.pdf")
+
+            meta_data = {
+                "status": "SUCCESS" if is_success == 1 else "ERROR",
+                "diff_pages": diff_pages,
+                "files_compared": {
+                    "old_pdf": old_name,
+                    "new_pdf": new_name
+                },
+                "blank_pages": {
+                    "old_blanks": old_blanks,
+                    "new_blanks": new_blanks
+                }
+            }
+
+            json_path = os.path.join(project_folder, f"{record_id}.json")
+            with open(json_path, 'w', encoding='utf-8') as jf:
+                json.dump(meta_data, jf, ensure_ascii=False, indent=4)
             
             if is_success == 1:
-                sql = "UPDATE MappingRecord SET Status = ?, DiffPages = ?, IsPublish = 1 WHERE RecordID = ?"
+                sql = "UPDATE MappingRecord SET Status = ?, IsPublish = 1 WHERE RecordID = ?"
             else:
-                sql = "UPDATE MappingRecord SET Status = ?, DiffPages = ? WHERE RecordID = ?"
-            execute_query(sql, (is_success, diff_pages_str, record_id))
+                sql = "UPDATE MappingRecord SET Status = ? WHERE RecordID = ?"
+            execute_query(sql, (is_success, record_id))
         except Exception as e:
             print("Background Mapping Error:", e)
-
-            sql = "UPDATE MappingRecord SET Status = 0, DiffPages = 'ERROR' WHERE RecordID = ?"
+            try:
+                project_folder = os.path.dirname(csv_result)
+                json_path = os.path.join(project_folder, f"{record_id}.json")
+                meta_data = {"status": "ERROR"}
+                if os.path.exists(json_path):
+                    with open(json_path, 'r', encoding='utf-8') as jf:
+                        try:
+                            meta_data = json.load(jf)
+                        except Exception:
+                            pass
+                meta_data["status"] = "ERROR"
+                with open(json_path, 'w', encoding='utf-8') as jf:
+                    json.dump(meta_data, jf, ensure_ascii=False, indent=4)
+            except Exception as je:
+                print("Error updating JSON on error state:", je)
+            
+            sql = "UPDATE MappingRecord SET Status = 0 WHERE RecordID = ?"
             execute_query(sql, (record_id,))
         finally:
             mapping_semaphore.release()
@@ -59,9 +160,10 @@ def doc_mapping():
     new_id = request.form.get("new_pdf_id")
     creator = session.get("ID")
 
-    doc_files_sql = "SELECT ID, FileName FROM DocVersion WHERE ID IN (?, ?)"
+    doc_files_sql = "SELECT ID, FileName, Version FROM DocVersion WHERE ID IN (?, ?)"
     files = execute_query(doc_files_sql, (old_id, new_id))
     file_map = {str(row['ID']): row['FileName'] for row in files}
+    file_info = {str(row['ID']): f"{row['FileName']} (v{row['Version']})" for row in files}
 
     if str(old_id) not in file_map or str(new_id) not in file_map:
         flash("找不到指定的PDF", "error")
@@ -75,15 +177,34 @@ def doc_mapping():
     os.makedirs(project_folder, exist_ok=True)
     
     csv_result = f"{project_folder}/{record_id}.csv"
-    diff_pdf_path = f"{project_folder}/{record_id}.pdf"
+    template_pdf_path = f"{project_folder}/{record_id}_template.pdf"
 
-    # 先寫入資料庫，狀態為 0，DiffPages為'PROCESSING'
-    sql = """INSERT INTO MappingRecord (RecordID, OldDocID, NewDocID, Creator, Status, IsPublish, DiffPages) VALUES (?, ?, ?, ?, ?, ?, ?)"""
-    params = (record_id, old_id, new_id, creator, 0, 0, 'PROCESSING')
+    # 先寫入資料庫，狀態為 0
+    sql = """INSERT INTO MappingRecord (RecordID, OldDocID, NewDocID, Creator, Status, IsPublish) VALUES (?, ?, ?, ?, ?, ?)"""
+    params = (record_id, old_id, new_id, creator, 0, 0)
     
     if execute_query(sql, params):
+        # 寫入初始 JSON 檔，標記狀態為 PROCESSING
+        json_path = os.path.join(project_folder, f"{record_id}.json")
+        old_name = file_info.get(str(old_id), f"{old_id}.pdf")
+        new_name = file_info.get(str(new_id), f"{new_id}.pdf")
+        meta_data = {
+            "status": "PROCESSING",
+            "diff_pages": [],
+            "files_compared": {
+                "old_pdf": old_name,
+                "new_pdf": new_name
+            },
+            "blank_pages": {
+                "old_blanks": [],
+                "new_blanks": []
+            }
+        }
+        with open(json_path, 'w', encoding='utf-8') as jf:
+            json.dump(meta_data, jf, ensure_ascii=False, indent=4)
+
         app_obj = current_app._get_current_object()
-        thread = threading.Thread(target=run_mapping_background, args=(app_obj, record_id, old_pdf_path, new_pdf_path, csv_result, diff_pdf_path))
+        thread = threading.Thread(target=run_mapping_background, args=(app_obj, record_id, old_pdf_path, new_pdf_path, csv_result, template_pdf_path))
         thread.start()      
         return jsonify({"status": "success", "message": "版本比對開始執行！"})
     else:
@@ -109,10 +230,16 @@ def mapping_tool():
         project_folder = os.path.join(Mapping_Folder, record_id)
         csv_path = os.path.join(project_folder, f"{record_id}.csv")
         pdf_path = os.path.join(project_folder, f"{record_id}.pdf")
+        template_pdf_path = os.path.join(project_folder, f"{record_id}_template.pdf")
+        json_path = os.path.join(project_folder, f"{record_id}.json")
         if os.path.exists(csv_path):
             os.remove(csv_path)
         if os.path.exists(pdf_path):
             os.remove(pdf_path)
+        if os.path.exists(template_pdf_path):
+            os.remove(template_pdf_path)
+        if os.path.exists(json_path):
+            os.remove(json_path)
         if os.path.exists(project_folder) and not os.listdir(project_folder):
             os.rmdir(project_folder)
 
@@ -150,11 +277,16 @@ def mapping_action():
         return send_from_directory(os.path.join(current_app.root_path, Mapping_Folder), filename, as_attachment=True, download_name=filename)
 
     elif action == "download_diff":
-        filename = f"{record_id}.pdf"
+        filename = f"{record_id}_template.pdf"
         folder_path = os.path.join(current_app.root_path, Mapping_Folder, record_id)
         if os.path.exists(os.path.join(folder_path, filename)):
             return send_from_directory(folder_path, filename, as_attachment=True, download_name="差異比對結果.pdf")
+        # Fallback for old records
+        old_filename = f"{record_id}.pdf"
+        if os.path.exists(os.path.join(folder_path, old_filename)):
+            return send_from_directory(folder_path, old_filename, as_attachment=True, download_name="差異比對結果.pdf")
         return send_from_directory(os.path.join(current_app.root_path, Mapping_Folder), filename, as_attachment=True, download_name="差異比對結果.pdf")
+
 
     elif action == "batch_delete":
         record_ids = request.form.getlist("doc_ids")
@@ -172,10 +304,16 @@ def mapping_action():
             project_folder = os.path.join(Mapping_Folder, rid)
             csv_path = os.path.join(project_folder, f"{rid}.csv")
             pdf_path = os.path.join(project_folder, f"{rid}.pdf")
+            template_pdf_path = os.path.join(project_folder, f"{rid}_template.pdf")
+            json_path = os.path.join(project_folder, f"{rid}.json")
             if os.path.exists(csv_path):
                 os.remove(csv_path)
             if os.path.exists(pdf_path):
                 os.remove(pdf_path)
+            if os.path.exists(template_pdf_path):
+                os.remove(template_pdf_path)
+            if os.path.exists(json_path):
+                os.remove(json_path)
             if os.path.exists(project_folder) and not os.listdir(project_folder):
                 os.rmdir(project_folder)
             if execute_query("DELETE FROM MappingRecord WHERE RecordID = ?", (rid,)):
@@ -201,8 +339,24 @@ def mapping_action():
 @bp_mapping.route("/mapping/status/<record_id>", methods=["GET"])
 @login_required
 def mapping_status(record_id):
-    sql = "SELECT Status, DiffPages FROM MappingRecord WHERE RecordID = ?"
+    sql = "SELECT Status FROM MappingRecord WHERE RecordID = ?"
     result = execute_query(sql, (record_id,))
     if result:
-        return jsonify({"success": True, "Status": result[0]["Status"], "DiffPages": result[0]["DiffPages"]})
+        # Read status from json file
+        status_str = 'ERROR'
+        rid = record_id
+        json_path = os.path.join(current_app.root_path, Mapping_Folder, rid, f"{rid}.json")
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, 'r', encoding='utf-8') as jf:
+                    data = json.load(jf)
+                    status_str = data.get("status", "ERROR")
+            except Exception:
+                pass
+        else:
+            if result[0]["Status"] == 1:
+                status_str = 'SUCCESS'
+            else:
+                status_str = 'PROCESSING'
+        return jsonify({"success": True, "Status": result[0]["Status"], "DiffPages": status_str})
     return jsonify({"success": False}), 404

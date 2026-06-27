@@ -13,8 +13,8 @@ from modules.db import execute_query
 
 notes_bp = Blueprint('annotation_edit', __name__)
 
-UPLOAD_Folder = "static/uploads"
-NOTE_Folder = "static/annotation"
+UPLOAD_Folder = "tasks/uploads"
+NOTE_Folder = "tasks/annotation"
 FONT_PATH = "C:/Windows/Fonts/msjh.ttc"
 
 def parse_color(color_str):

@@ -14,9 +14,9 @@ import os
 
 migrate_semaphore = threading.Semaphore(3)
 bp_notes = Blueprint('bp_notes', __name__)
-VERSION_Folder = 'static/docVersion'
-Mapping_Folder = "static/docMapResult"
-Note_Folder = 'static/note'
+VERSION_Folder = 'tasks/docVersion'
+Mapping_Folder = "tasks/docMapResult"
+Note_Folder = 'tasks/note'
 
 def run_migrate_background(app, transfer_id, old_pdf_path, new_pdf_path, csv_mapping, output_pdf, diff_pages_str, output_filename):
     with app.app_context():
@@ -77,14 +77,28 @@ def migrate_pdf_api():
         if not mapping_id:
             return jsonify({"status": "error", "message": "未選擇版本比對紀錄"})
 
-        sql = """SELECT MappingRecord.NewDocID,MappingRecord.DiffPages AS diff_pages FROM MappingRecord WHERE MappingRecord.RecordID = ?"""
+        sql = """SELECT MappingRecord.NewDocID FROM MappingRecord WHERE MappingRecord.RecordID = ?"""
         TransferID = "note" + uuid.uuid4().hex[:8]
         row = execute_query(sql, (mapping_id,))[0]
         target_new_pdf_path = os.path.join(VERSION_Folder, f"{row['NewDocID']}.pdf")
         mapping_csv_path = os.path.join(Mapping_Folder, mapping_id, f"{mapping_id}.csv")
-        diff_pages_str = row.get('diff_pages', '')
+        
+        # 從 JSON 中讀取 diff_pages (如有)
+        import json
+        json_path = os.path.join(Mapping_Folder, mapping_id, f"{mapping_id}.json")
+        diff_pages_str = ""
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, 'r', encoding='utf-8') as jf:
+                    json_data = json.load(jf)
+                    diff_pages = json_data.get("diff_pages", [])
+                    diff_pages_str = ",".join(map(str, diff_pages))
+            except Exception as e:
+                print("Error reading json mapping info:", e)
+        else:
+            diff_pages_str = ""
 
-        note_dir = os.path.join("static/note", TransferID if TransferID.startswith("note") else f"note{TransferID}")
+        note_dir = os.path.join("tasks/note", TransferID if TransferID.startswith("note") else f"note{TransferID}")
         os.makedirs(note_dir, exist_ok=True)
         
         original_filename = pdf_with_notes.filename
@@ -120,7 +134,7 @@ def notes_action():
                 source_file_name = result[0]['SourceFileName']
                 transfer_id = result[0]['TransferID']
                 base_name = os.path.splitext(source_file_name)[0]
-                note_dir = os.path.join(current_app.root_path, "static/note", transfer_id if transfer_id.startswith("note") else f"note{transfer_id}")
+                note_dir = os.path.join(current_app.root_path, "tasks/note", transfer_id if transfer_id.startswith("note") else f"note{transfer_id}")
                 download_name = filename if filename.startswith("Move_") else f"{base_name}_Move.pdf"
                 
                 return send_from_directory(note_dir, filename, as_attachment=True, download_name=download_name)
@@ -140,7 +154,7 @@ def notes_action():
                 
                 if res:
                     if execute_query("DELETE FROM NoteTransferHistory WHERE TransferID = ? AND UserID = ?", (transfer_id, user_id)):
-                        note_dir = os.path.join(current_app.root_path, "static/note", transfer_id if transfer_id.startswith("note") else f"note{transfer_id}")
+                        note_dir = os.path.join(current_app.root_path, "tasks/note", transfer_id if transfer_id.startswith("note") else f"note{transfer_id}")
                         if os.path.exists(note_dir):
                             shutil.rmtree(note_dir)
                         return jsonify({"success": True, "message": "刪除成功"})
@@ -157,7 +171,7 @@ def notes_action():
                     res = execute_query(sql, (tid, user_id))
                     if res:
                         if execute_query("DELETE FROM NoteTransferHistory WHERE TransferID = ? AND UserID = ?", (tid, user_id)):
-                            note_dir = os.path.join(current_app.root_path, "static/note", tid if tid.startswith("note") else f"note{tid}")
+                            note_dir = os.path.join(current_app.root_path, "tasks/note", tid if tid.startswith("note") else f"note{tid}")
                             if os.path.exists(note_dir):
                                 shutil.rmtree(note_dir)
                             success_count += 1
@@ -177,7 +191,7 @@ def notes_action():
                             if result_name and result_name not in ['PROCESSING', 'ERROR']:
                                 base_name = os.path.splitext(source_file_name)[0]
                                 download_name = result_name if result_name.startswith("Move_") else f"{base_name}_Move.pdf"
-                                note_dir = os.path.join(current_app.root_path, "static/note", tid if tid.startswith("note") else f"note{tid}")
+                                note_dir = os.path.join(current_app.root_path, "tasks/note", tid if tid.startswith("note") else f"note{tid}")
                                 file_path = os.path.join(note_dir, result_name)
                                 if os.path.exists(file_path):
                                     zf.write(file_path, download_name)
