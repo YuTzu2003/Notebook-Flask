@@ -1,15 +1,12 @@
-from flask import Blueprint, render_template, request, jsonify, send_file, session, flash, redirect, url_for, send_from_directory, current_app
+from flask import Blueprint, render_template, request, jsonify,session, flash, redirect, url_for, send_from_directory, current_app
 import os
 import uuid
-from pandas import io
 from modules.auth import login_required
 from modules.db import execute_query
 from modules.mapping.mapping import UseMapping as process_and_match_pdfs
 from modules.mapping.pdf_diff import highlight_and_bookmark_diffs
 import threading
 import json
-import fitz
-import re
 
 bp_mapping = Blueprint('bp_mapping', __name__)
 VERSION_Folder = 'tasks/docVersion'
@@ -51,17 +48,7 @@ def mapping_page():
 
 mapping_semaphore = threading.Semaphore(3)
 
-def get_blanks(pdf_path, header_ratio=0.1, footer_ratio=0.1):
-    doc = fitz.open(pdf_path)
-    blanks = []
-    for i, page in enumerate(doc):
-        w, h = page.rect.width, page.rect.height
-        clip = fitz.Rect(0, h * header_ratio, w, h * (1 - footer_ratio))
-        text = re.sub(r'\s+', ' ', page.get_text("text", clip=clip)).strip()
-        if not text:
-            blanks.append(i + 1)
-    doc.close()
-    return blanks
+from modules.mapping.blank_pages import get_blanks
 
 def run_mapping_background(app, record_id, old_pdf_path, new_pdf_path, csv_result, template_pdf_path):
     with app.app_context():
