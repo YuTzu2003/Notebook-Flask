@@ -1,7 +1,7 @@
 import fitz
 import json
 
-# 筆記PDF偵測空白頁
+# 筆記PDF空白頁碼
 def get_pdf_blank_pages(pdf_file, header_ratio=0.08, footer_ratio=0.08):
     def check_blank_page(doc, page_num):
         page = doc[page_num - 1]
@@ -28,7 +28,7 @@ def get_pdf_blank_pages(pdf_file, header_ratio=0.08, footer_ratio=0.08):
         if check_blank_page(doc, p):
             blank_pages.append(p) 
     doc.close()
-    return blank_pages
+    return blank_pages, total_pages
 
 # 原始文件JSON空白頁碼
 def get_json_blank_pages(json_file):
@@ -39,7 +39,7 @@ def get_json_blank_pages(json_file):
     old_blanks = blank_pages.get("old_blanks", [])
     return old_blanks
 
-# 頁碼偏移並比對
+# 頁碼偏移比對
 def compare_shifted_pages(old_blanks, new_blanks):
     i = 0 
     j = 0 
@@ -67,15 +67,3 @@ def compare_shifted_pages(old_blanks, new_blanks):
         inserted.append(new_blanks[j])
         j += 1           
     return matched, inserted
-
-if __name__ == "__main__":
-    pdf_path = r"D:/YLH/notebook_flask/test/00編_手冊SSF2018v7全1140114修訂柔 .pdf"
-    json_path = r"D:\YLH\notebook_flask\test\map5101aceb.json"
-
-    old_list = get_json_blank_pages(json_path)
-    new_list = get_pdf_blank_pages(pdf_path)
-    matched_pages, new_pages = compare_shifted_pages(old_list, new_list)
-
-    for old_p, new_p in matched_pages:
-        print(f"原始文件:P.{old_p} ===> 筆記:P.{new_p}")
-    print(f"\n新增空白頁:{new_pages}")

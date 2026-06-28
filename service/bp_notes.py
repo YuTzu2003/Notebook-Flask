@@ -11,6 +11,7 @@ import threading
 import time
 import os
 import json
+from modules.move_annotation.create_template import generate_dynamic_template
 
 migrate_semaphore = threading.Semaphore(3)
 bp_notes = Blueprint('bp_notes', __name__)
@@ -18,11 +19,35 @@ VERSION_Folder = 'tasks/docVersion'
 Mapping_Folder = "tasks/docMapResult"
 Note_Folder = 'tasks/note'
 
-def run_migrate_background(app, transfer_id, old_pdf_path, new_pdf_path, csv_mapping, output_pdf, diff_pages_str, output_filename):
+def run_migrate_background(app, transfer_id, old_pdf_path, new_pdf_path, csv_mapping, output_pdf, diff_pages_str, output_filename, json_path):
     with app.app_context():
         migrate_semaphore.acquire()
         try:
-            migrate_all_to_pdf(old_pdf=old_pdf_path,new_pdf=new_pdf_path,csv_mapping=csv_mapping,output_pdf=output_pdf,diff_pages_str=diff_pages_str)
+            base_dir = os.path.dirname(output_pdf)
+            dynamic_template_path = os.path.join(base_dir, "Template.pdf")
+            dynamic_csv_path = os.path.join(base_dir, "Mapping.csv")
+            
+            has_inserted_blanks = False
+            try:
+                has_inserted_blanks = generate_dynamic_template(
+                    user_pdf_path=old_pdf_path,
+                    json_path=json_path,
+                    csv_path=csv_mapping,
+                    original_template_path=new_pdf_path,
+                    output_template_path=dynamic_template_path,
+                    output_csv_path=dynamic_csv_path
+                )
+            except Exception as e:
+                print("Dynamic Template Generation Error:", e)
+                
+            if has_inserted_blanks:
+                actual_new_pdf = dynamic_template_path
+                actual_csv = dynamic_csv_path
+            else:
+                actual_new_pdf = new_pdf_path
+                actual_csv = csv_mapping
+
+            migrate_all_to_pdf(old_pdf=old_pdf_path,new_pdf=actual_new_pdf,csv_mapping=actual_csv,output_pdf=output_pdf,diff_pages_str=diff_pages_str)
             time.sleep(1.5)
             sql = "UPDATE Hospital.dbo.NoteTransferHistory SET ResultName = ? WHERE TransferID = ?"
             execute_query(sql, (output_filename, transfer_id))
@@ -113,7 +138,7 @@ def migrate_pdf_api():
         sql_insert = """INSERT INTO Hospital.dbo.NoteTransferHistory (TransferID, UserID, MappingID, SourceFileName, ResultName) VALUES (?, ?, ?, ?, ?)"""
         execute_query(sql_insert, (TransferID, user_id, mapping_id, pdf_with_notes.filename, 'PROCESSING'))
         app_obj = current_app._get_current_object()
-        thread = threading.Thread(target=run_migrate_background, args=(app_obj, TransferID, user_pdf_path, target_new_pdf_path, mapping_csv_path, output_path, diff_pages_str, output_filename))
+        thread = threading.Thread(target=run_migrate_background, args=(app_obj, TransferID, user_pdf_path, target_new_pdf_path, mapping_csv_path, output_path, diff_pages_str, output_filename, json_path))
         thread.start()
         return jsonify({"status": "success", "message": "開始執行！"})
     except Exception as e:
