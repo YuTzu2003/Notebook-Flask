@@ -19,7 +19,7 @@ from waitress import serve
 
 logging.basicConfig(level=logging.INFO,format='%(asctime)s | %(levelname)s | %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
 app = Flask(__name__)
-app.config['TEMPLATES_AUTO_RELOAD'] = True  # 前端每次都重新讀取，不用重啟伺服器
+app.config['TEMPLATES_AUTO_RELOAD'] = True 
 
 @app.errorhandler(Exception)
 def handle_exception(e):
@@ -31,8 +31,8 @@ def handle_exception(e):
     sql = "INSERT INTO ErrorLogs (ErrorCode, ErrorMessage, Traceback, CreatedAt) VALUES (?, ?, ?, GETDATE())"
     execute_query(sql, (error_code, error_msg, tb))
     if request.path.startswith('/admin/manage_user') or request.path.startswith('/doc_tool') or request.path.startswith('/mapping_tool') or request.path.startswith('/notes_tool') or request.path.startswith('/annotation'):
-        return jsonify({"success": False, "message": f"發生錯誤，錯誤代碼：{error_code}，請聯絡資訊人員。"}), 500
-    return f"<script>alert('發生錯誤，錯誤代碼：{error_code}，請聯絡資訊人員。'); window.history.back();</script>", 500
+        return jsonify({"success": False, "message": f"發生錯誤，錯誤代碼：{error_code}"}), 500
+    return f"<script>alert('發生錯誤，錯誤代碼：{error_code}'); window.history.back();</script>", 500
 
 app.secret_key = "replace-with-a-secret-key"
 app.register_blueprint(auth_bp)

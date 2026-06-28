@@ -257,6 +257,6 @@ def UseMapping(old_pdf_path, new_pdf_path, output_csv, output_pdf):
 
     result_df = pd.DataFrame(rows).sort_values("Old_Page").reset_index(drop=True)
     result_df.to_csv(output_csv, index=False, encoding="utf-8-sig")
-    for mode, cnt in result_df['Mode'].value_counts().items():
-        print(f"{mode}: {cnt}")
+    # for mode, cnt in result_df['Mode'].value_counts().items():
+    #     print(f"{mode}: {cnt}")
     return result_df

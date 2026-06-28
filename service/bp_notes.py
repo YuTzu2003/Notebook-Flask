@@ -30,12 +30,12 @@ def run_migrate_background(app, transfer_id, old_pdf_path, new_pdf_path, csv_map
             has_inserted_blanks = False
             try:
                 has_inserted_blanks = generate_dynamic_template(
-                    user_pdf_path=old_pdf_path,
-                    json_path=json_path,
-                    csv_path=csv_mapping,
-                    original_template_path=new_pdf_path,
-                    output_template_path=dynamic_template_path,
-                    output_csv_path=dynamic_csv_path
+                    old_pdf_path,
+                    json_path,
+                    csv_mapping,
+                    new_pdf_path,
+                    dynamic_template_path,
+                    dynamic_csv_path
                 )
             except Exception as e:
                 print("Dynamic Template Generation Error:", e)
@@ -47,7 +47,7 @@ def run_migrate_background(app, transfer_id, old_pdf_path, new_pdf_path, csv_map
                 actual_new_pdf = new_pdf_path
                 actual_csv = csv_mapping
 
-            migrate_all_to_pdf(old_pdf=old_pdf_path,new_pdf=actual_new_pdf,csv_mapping=actual_csv,output_pdf=output_pdf,diff_pages_str=diff_pages_str)
+            migrate_all_to_pdf(old_pdf_path, actual_new_pdf, actual_csv, output_pdf, diff_pages_str)
             time.sleep(1.5)
             sql = "UPDATE Hospital.dbo.NoteTransferHistory SET ResultName = ? WHERE TransferID = ?"
             execute_query(sql, (output_filename, transfer_id))
