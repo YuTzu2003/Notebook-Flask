@@ -536,13 +536,8 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             is_direct = (text_result is not None) or (status != "群組")
             processed_offsets_map[old_idx].append((old_rect_f, dx, dy, target_new_idx, is_direct))
 
-            # 註解屬性清理與平移寫入
-            if subtype == '/FreeText':
-                for key in ['/AP', '/RD', '/IT']:
-                    if annot.get(key): del annot[key]
-                annot.DA = pdfrw.PdfObject("( /Helv 12 Tf 1 0 0 rg )") 
-            else:
-                pass
+            # 註解屬性清理與平移寫入：保留 FreeText 的 /AP 與 /DA 屬性以完整顯示中文字型，其餘定位位移與螢光筆等不受影響
+            pass
 
             new_rect = [r[0] + dx, r[1] - dy, r[2] + dx, r[3] - dy]
             if text_result:
