@@ -176,7 +176,7 @@ def find_precise_offset(page_old, page_new, old_rect, processed_offsets, words_c
     return 0, 0, None, "兜底零位移", 0
 
 # 全文 context 模糊比對演算法 (適用於劃線、螢光筆)
-def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None, words_cache=None):
+def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None, words_cache=None, old_quadpoints=None):
     def get_page_chars(page):
         if rawdict_cache is not None:
             key = (id(page.parent), page.number)
@@ -208,98 +208,110 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
 
     # 1. 提取舊頁面中被標記覆蓋的字元
     old_chars = get_page_chars(page_old)
+    
+    quad_rects = []
+    old_h = page_old.rect.height
+    if old_quadpoints:
+        try:
+            pts = [float(x) for x in old_quadpoints]
+            for i in range(0, len(pts), 8):
+                if i + 7 < len(pts):
+                    line_pts = pts[i:i+8]
+                    xs = line_pts[0::2]
+                    ys = line_pts[1::2]
+                    quad_rects.append(fitz.Rect(min(xs), old_h - max(ys), max(xs), old_h - min(ys)))
+        except Exception as e:
+            print("Error parsing old_quadpoints in find_text_based_position:", e)
+
     covered_indices = []
     for idx, c in enumerate(old_chars):
         c_rect = fitz.Rect(c[:4])
-        if old_rect_f.intersects(c_rect):
-            overlap = old_rect_f & c_rect
-            if overlap.get_area() / max(c_rect.get_area(), 1) > 0.3:
-                covered_indices.append(idx)
+        is_covered = False
+        if quad_rects:
+            for qr in quad_rects:
+                if qr.intersects(c_rect):
+                    overlap = qr & c_rect
+                    if overlap.get_area() / max(c_rect.get_area(), 1) > 0.3:
+                        is_covered = True
+                        break
+        else:
+            if old_rect_f.intersects(c_rect):
+                overlap = old_rect_f & c_rect
+                if overlap.get_area() / max(c_rect.get_area(), 1) > 0.3:
+                    is_covered = True
+        
+        if is_covered:
+            covered_indices.append(idx)
 
     if not covered_indices:
         return None
 
-    # 找出核心覆蓋文字的起訖點
-    start_idx = covered_indices[0]
-    end_idx = covered_indices[-1]
-    covered = old_chars[start_idx:end_idx + 1]
-
-    # 2. 建立含有前後文 (Context) 的舊版目標字串，解決重複文句的對齊困擾
-    context_len = 6
-    ctx_start = max(0, start_idx - context_len)
-    ctx_end = min(len(old_chars), end_idx + 1 + context_len)
-    
-    old_pattern_str = "".join([c[4] for c in old_chars[ctx_start:ctx_end]])
-    len_prefix = start_idx - ctx_start
-    len_core = (end_idx - start_idx) + 1
-
-    # 3. 獲取新頁面字元並拼接成長字串
+    # 2. 獲取新頁面字元
     new_chars = get_page_chars(page_new)
     if not new_chars:
         return None
 
-    new_str = "".join([c[4] for c in new_chars])
+    # --- 全頁字元對齊對位模組 (Global Page-Level Alignment with Space/Case Normalization) ---
+    def build_normalized_mapping(char_list):
+        import unicodedata
+        norm_str = ""
+        index_map = []
+        for idx, c in enumerate(char_list):
+            char_text = c[4]
+            # 過濾控制字元、項目符號及隱形字元
+            if char_text.strip() and char_text not in ['\uf09f', '\u2022', '\xad', '\u200b']:
+                # 1. NFKC 標準化 (將全形英文/數字轉換為半形，並將複合字元分解為標準形式)
+                norm_c = unicodedata.normalize('NFKC', char_text).lower()
+                # 2. 標點符號與括號標準化，消除新舊版因為字型或輸入法不同導致的對位落差
+                norm_c = norm_c.replace('（', '(').replace('）', ')')
+                norm_c = norm_c.replace('：', ':').replace('；', ';')
+                norm_c = norm_c.replace('，', ',').replace('。', '.')
+                norm_c = norm_c.replace('、', ',')
+                if norm_c:
+                    # 保留首個字元以確保 1-to-1 索引長度對齊
+                    norm_str += norm_c[0]
+                    index_map.append(idx)
+        return norm_str, index_map
+
+    old_norm_str, old_index_map = build_normalized_mapping(old_chars)
+    new_norm_str, new_index_map = build_normalized_mapping(new_chars)
     
-    best_match_start = -1
-    best_match_end = -1
-    best_metric = -9999.0
-
-    # 4. 優先嘗試完整上下文的精準子字串匹配
-    exact_idx = new_str.find(old_pattern_str)
-    if exact_idx != -1:
-        # 新版可能有多處相同的背景字，用距離來判定最接近的項
-        for start_char_idx in range(len(new_chars) - len(old_pattern_str) + 1):
-            cand_str = "".join([nc[4] for nc in new_chars[start_char_idx : start_char_idx + len(old_pattern_str)]])
-            if cand_str == old_pattern_str:
-                cand_x0 = new_chars[start_char_idx + len_prefix][0]
-                cand_y0 = new_chars[start_char_idx + len_prefix][1]
-                dist = abs(cand_x0 - old_rect_f.x0) + abs(cand_y0 - old_rect_f.y0)
-                metric = 1.0 - (dist / 10000.0)
-                if metric > best_metric:
-                    best_metric = metric
-                    best_match_start = start_char_idx
-                    best_match_end = start_char_idx + len(old_pattern_str)
-                    
-    # 5. 若無法精準匹配（可能新舊版增減了標點或空白），啟動滑動視窗進行模糊比對
-    if best_match_start == -1:
-        window_size = len(old_pattern_str)
-        for start in range(len(new_chars) - window_size + 3):
-            for delta in [-2, -1, 0, 1, 2]: # 容忍標點符號的增刪
-                end = start + window_size + delta
-                if end > len(new_chars) or end <= start:
-                    continue
-                    
-                new_cand_str = new_str[start:end] # 效能優化：使用字串切片取代列表生成式
-                score = fuzz.ratio(old_pattern_str, new_cand_str) / 100.0
+    import difflib
+    matcher = difflib.SequenceMatcher(None, old_norm_str, new_norm_str, autojunk=False)
+    matching_blocks = matcher.get_matching_blocks()
+    
+    covered_norm_indices = [i for i, x in enumerate(old_index_map) if x in covered_indices]
+    mapped_norm_indices = []
+    for x in covered_norm_indices:
+        for a, b, size in matching_blocks:
+            if a <= x < a + size:
+                mapped_norm_indices.append(b + (x - a))
+                break
                 
-                # 計算距離懲罰，防範段落漂移到遙遠的重複句上
-                cand_x0 = new_chars[start][0]
-                cand_y0 = new_chars[start][1]
-                dist = abs(cand_x0 - old_rect_f.x0) + abs(cand_y0 - old_rect_f.y0)
-                metric = score - (dist / 8000.0)
-                
-                if score > 0.82 and metric > best_metric: # 相似度門檻為 82%
-                    best_metric = metric
-                    best_match_start = start
-                    best_match_end = end
-
-    if best_match_start < 0:
+    if not mapped_norm_indices:
         return None
+        
+    mapped_orig_indices = [new_index_map[x] for x in mapped_norm_indices]
+    matched = [new_chars[x] for x in mapped_orig_indices]
+    matched.sort(key=lambda x: (x[1], x[0])) # 確保按閱讀順序排序
 
-    # 從新頁面的匹配區間中，等比例切出目標核心文字並處理單字展開
-    total_matched_chars = new_chars[best_match_start:best_match_end]
-    ratio_start = len_prefix / len(old_pattern_str)
-    ratio_core = len_core / len(old_pattern_str)
-    
-    new_core_start = int(len(total_matched_chars) * ratio_start)
-    new_core_end = new_core_start + int(len(total_matched_chars) * ratio_core)
-    
-    new_core_start = max(0, min(new_core_start, len(total_matched_chars) - 1)) 
-    new_core_end = max(new_core_start + 1, min(new_core_end, len(total_matched_chars)))
-    
-    matched = total_matched_chars[new_core_start:new_core_end]
     if not matched:
         return None
+
+    # --- 雙重驗證過濾器 (False Positive Validator) ---
+    # 1. 確保匹配比例足夠高 (>= 60%)
+    match_rate = len(mapped_norm_indices) / max(len(covered_norm_indices), 1)
+    if match_rate < 0.60:
+        return None
+
+    # 2. 針對短字句 (長度小於 6) 限制垂直位移，防止高頻率重複單字錯位
+    norm_len = len(covered_norm_indices)
+    if norm_len < 6:
+        y_new_center = (min(c[1] for c in matched) + max(c[3] for c in matched)) / 2
+        covered = [old_chars[x] for x in covered_indices]
+        y_old_center = (min(c[1] for c in covered) + max(c[3] for c in covered)) / 2
+        if abs(y_new_center - y_old_center) > 150:
+            return None
 
     new_words = get_words(page_new)
     english_word_rects = [fitz.Rect(w[:4]) for w in new_words if not any('\u4e00' <= char <= '\u9fff' for char in w[4])]
@@ -323,11 +335,11 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
 
     new_h = page_new.rect.height
 
-    # 將匹配字元依行分組 (小於 6pt 視為同行)
+    # 將匹配字元依行分組 (小於 10pt 視為同行，容忍上下標/公式等引起的微小垂直位移)
     lines = []
     current_line = [matched[0]]
     for w in matched[1:]:
-        if abs(w[1] - current_line[-1][1]) < 6:
+        if abs(w[1] - current_line[-1][1]) < 10:
             current_line.append(w)
         else:
             lines.append(current_line)
@@ -360,6 +372,7 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
     pdf_rect = [union_rect.x0, new_h - union_rect.y1, union_rect.x1, new_h - union_rect.y0]
 
     # 計算舊頁面中覆蓋矩形
+    covered = [old_chars[x] for x in covered_indices]
     x0_old = min(c[0] for c in covered)
     y0_old = min(c[1] for c in covered)
     x1_old = max(c[2] for c in covered)
@@ -455,18 +468,23 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 target_new_idx = ft_target_idx
             else:
                 if not overlaps_freetext and subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly', '/Square', '/Circle', '/Redact']:
-                    text_result = find_text_based_position(p_old_f, p_new_f, old_rect_f, rawdict_cache, words_cache)
+                    old_quadpoints = annot.get(PN('QuadPoints'))
+                    text_result = find_text_based_position(p_old_f, p_new_f, old_rect_f, rawdict_cache, words_cache, old_quadpoints)
                     if not text_result:
-                        for offset in [1, -1, 2]:
-                            cand_idx = new_idx + offset
-                            if 0 <= cand_idx < len(doc_new):
-                                if not sections_match(old_sections[old_idx], new_sections[cand_idx]):
-                                    continue
-                                res = find_text_based_position(p_old_f, doc_new[cand_idx], old_rect_f, rawdict_cache, words_cache)
-                                if res:
-                                    text_result = res
-                                    target_new_idx = cand_idx
-                                    break
+                        # 提取標記覆蓋的舊版字串，僅在字串長度大於或等於 6 個字時才允許跨頁搜尋，防範短字詞跳頁誤判
+                        annot_text = p_old_f.get_text("text", clip=old_rect_f).strip().replace('\n', '')
+                        annot_text_clean = "".join([c for c in annot_text if c.strip() and c not in ['\uf09f', '\u2022']])
+                        if len(annot_text_clean) >= 6:
+                            for offset in [1, -1, 2]:
+                                cand_idx = new_idx + offset
+                                if 0 <= cand_idx < len(doc_new):
+                                    if not sections_match(old_sections[old_idx], new_sections[cand_idx]):
+                                        continue
+                                    res = find_text_based_position(p_old_f, doc_new[cand_idx], old_rect_f, rawdict_cache, words_cache, old_quadpoints)
+                                    if res:
+                                        text_result = res
+                                        target_new_idx = cand_idx
+                                        break
                     if text_result:
                         new_quads, new_rect, pdf_rect_old = text_result
                         left_pad = r[0] - pdf_rect_old[0]
@@ -500,44 +518,56 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 # 無文字對位結果時，採用錨點比對或繼承群組位移
                 status = "未群組"
                 if not text_result:
-                    text_dx, text_dy, group_target_idx, status, match_count = find_precise_offset(p_old_f, p_new_f, old_rect_f, processed_offsets_map[old_idx], words_cache)                  
-                    if status == "群組" and group_target_idx is not None:
-                        target_new_idx = group_target_idx
-                        dx = text_dx
-                        dy = text_dy
+                    # 對於螢光筆、底線等標記，若無法匹配到文字，直接留在原本的物理位置 (原地)，不要隨錨點或群組位移偏移
+                    if subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly']:
+                        target_new_idx = new_idx
+                        cand_p_new = doc_new[target_new_idx]
+                        dx = (cand_p_new.rect.x0 - p_old_f.rect.x0)
+                        dy = (cand_p_new.rect.y0 - p_old_f.rect.y0)
                     else:
-                        best_match_count = -1
-                        best_dx, best_dy = 0, 0
-                        best_target_idx = new_idx
-                        for offset in [0, 1, -1, 2]:
-                            cand_idx = new_idx + offset
-                            if 0 <= cand_idx < len(doc_new):
-                                if not sections_match(old_sections[old_idx], new_sections[cand_idx]):
-                                    continue
-                                cand_p_new = doc_new[cand_idx]
-                                cand_dx, cand_dy, _, cand_status, cand_match_count = find_precise_offset(p_old_f, cand_p_new, old_rect_f, [], words_cache)
-                                if cand_status in ["精準AI", "弱AI"]:
-                                    if cand_match_count > best_match_count:
-                                        best_match_count = cand_match_count
-                                        best_dx = cand_dx
-                                        best_dy = cand_dy
-                                        best_target_idx = cand_idx
-                        
-                        if best_match_count == -1:
-                            target_new_idx = new_idx
-                            cand_p_new = doc_new[target_new_idx]
-                            dx = (cand_p_new.rect.x0 - p_old_f.rect.x0)
-                            dy = (cand_p_new.rect.y0 - p_old_f.rect.y0)
+                        text_dx, text_dy, group_target_idx, status, match_count = find_precise_offset(p_old_f, p_new_f, old_rect_f, processed_offsets_map[old_idx], words_cache)                  
+                        if status == "群組" and group_target_idx is not None:
+                            target_new_idx = group_target_idx
+                            dx = text_dx
+                            dy = text_dy
                         else:
-                            target_new_idx = best_target_idx
-                            cand_p_new = doc_new[target_new_idx]
-                            dx = best_dx + (cand_p_new.rect.x0 - p_old_f.rect.x0)
-                            dy = best_dy + (cand_p_new.rect.y0 - p_old_f.rect.y0)
+                            best_match_count = -1
+                            best_dx, best_dy = 0, 0
+                            best_target_idx = new_idx
+                            for offset in [0, 1, -1, 2]:
+                                cand_idx = new_idx + offset
+                                if 0 <= cand_idx < len(doc_new):
+                                    if not sections_match(old_sections[old_idx], new_sections[cand_idx]):
+                                        continue
+                                    cand_p_new = doc_new[cand_idx]
+                                    cand_dx, cand_dy, _, cand_status, cand_match_count = find_precise_offset(p_old_f, cand_p_new, old_rect_f, [], words_cache)
+                                    if cand_status in ["精準AI", "弱AI"]:
+                                        if cand_match_count > best_match_count:
+                                            best_match_count = cand_match_count
+                                            best_dx = cand_dx
+                                            best_dy = cand_dy
+                                            best_target_idx = cand_idx
+                            
+                            if best_match_count == -1:
+                                target_new_idx = new_idx
+                                cand_p_new = doc_new[target_new_idx]
+                                dx = (cand_p_new.rect.x0 - p_old_f.rect.x0)
+                                dy = (cand_p_new.rect.y0 - p_old_f.rect.y0)
+                            else:
+                                target_new_idx = best_target_idx
+                                cand_p_new = doc_new[target_new_idx]
+                                dx = best_dx + (cand_p_new.rect.x0 - p_old_f.rect.x0)
+                                dy = best_dy + (cand_p_new.rect.y0 - p_old_f.rect.y0)
             is_direct = (text_result is not None) or (status != "群組")
             processed_offsets_map[old_idx].append((old_rect_f, dx, dy, target_new_idx, is_direct))
 
-            # 註解屬性清理與平移寫入：保留 FreeText 的 /AP 與 /DA 屬性以完整顯示中文字型，其餘定位位移與螢光筆等不受影響
-            pass
+            # 註解屬性清理與平移寫入：
+            # 1. 對於 FreeText，保留 /AP 與 /DA 屬性以完整顯示中文字型。
+            # 2. 對於螢光筆與底線等，刪除舊的 /AP 外觀流，強迫 PDF 閱讀器根據新的 /QuadPoints 重新生成正確的畫筆外觀，避免劃一大片。
+            if subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly']:
+                for key in ['/AP', '/RD', '/IT']:
+                    if annot.get(key):
+                        del annot[key]
 
             new_rect = [r[0] + dx, r[1] - dy, r[2] + dx, r[3] - dy]
             if text_result:
