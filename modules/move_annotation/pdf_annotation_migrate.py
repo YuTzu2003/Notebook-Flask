@@ -74,7 +74,7 @@ def filtered_median(values, max_deviation=15):
     return statistics.median(filtered) if filtered else med
 
 # 空間幾何與錨點比對定位
-def find_precise_offset(page_old, page_new, old_rect, processed_offsets, words_cache=None):
+def find_precise_offset(page_old, page_new, old_rect, processed_offsets, spans_cache=None):
     for entry in processed_offsets:
         if len(entry) == 5:
             ref_rect, ref_dx, ref_dy, ref_target_idx, is_direct = entry
@@ -86,12 +86,63 @@ def find_precise_offset(page_old, page_new, old_rect, processed_offsets, words_c
             return ref_dx, ref_dy, ref_target_idx, "群組", 999 
         
     def get_words(p):
-        if words_cache is not None:
+        if spans_cache is not None:
             key = (id(p.parent), p.number)
-            if key not in words_cache:
-                words_cache[key] = p.get_text("words")
-            return words_cache[key]
-        return p.get_text("words")
+            if key not in spans_cache:
+                spans = []
+                raw = p.get_text("dict")
+                for block in raw.get("blocks", []):
+                    for line in block.get("lines", []):
+                        for span in line.get("spans", []):
+                            t = span.get("text", "").strip()
+                            bbox = span.get("bbox")
+                            if any('\u4e00' <= c <= '\u9fff' for c in t):
+                                t_clean = "".join(t.split())
+                                if len(t_clean) >= 3:
+                                    spans.append((bbox[0], bbox[1], bbox[2], bbox[3], t_clean))
+                            else:
+                                words = t.split()
+                                idx = 0
+                                for w in words:
+                                    start_idx = t.find(w, idx)
+                                    end_idx = start_idx + len(w)
+                                    idx = end_idx
+                                    L = len(t)
+                                    W = bbox[2] - bbox[0]
+                                    word_x0 = bbox[0] + (start_idx / L) * W if L > 0 else bbox[0]
+                                    word_x1 = bbox[0] + (end_idx / L) * W if L > 0 else bbox[2]
+                                    w_clean = "".join(w.split())
+                                    if len(w_clean) >= 3:
+                                        spans.append((word_x0, bbox[1], word_x1, bbox[3], w_clean))
+                spans_cache[key] = spans
+            return spans_cache[key]
+        
+        spans = []
+        raw = p.get_text("dict")
+        for block in raw.get("blocks", []):
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    t = span.get("text", "").strip()
+                    bbox = span.get("bbox")
+                    if any('\u4e00' <= c <= '\u9fff' for c in t):
+                        t_clean = "".join(t.split())
+                        if len(t_clean) >= 3:
+                            spans.append((bbox[0], bbox[1], bbox[2], bbox[3], t_clean))
+                    else:
+                        words = t.split()
+                        idx = 0
+                        for w in words:
+                            start_idx = t.find(w, idx)
+                            end_idx = start_idx + len(w)
+                            idx = end_idx
+                            L = len(t)
+                            W = bbox[2] - bbox[0]
+                            word_x0 = bbox[0] + (start_idx / L) * W if L > 0 else bbox[0]
+                            word_x1 = bbox[0] + (end_idx / L) * W if L > 0 else bbox[2]
+                            w_clean = "".join(w.split())
+                            if len(w_clean) >= 3:
+                                spans.append((word_x0, bbox[1], word_x1, bbox[3], w_clean))
+        return spans
 
     words_old = get_words(page_old)
     if not words_old: return 0, 0, None, "無舊文保底", 0
@@ -149,27 +200,51 @@ def find_precise_offset(page_old, page_new, old_rect, processed_offsets, words_c
         
         # 如果無法精準搜尋，啟動模糊相似度搜尋 (Fuzzy Match)
         if (not hits or len(hits) > 3) and len(text) >= 3:
-            matches = process.extract(text, new_texts, scorer=fuzz.ratio, limit=3)
+            clean_text = "".join(text.split())
+            clean_new_texts = ["".join(nt.split()) for nt in new_texts]
+            matches = []
+            for i, nt in enumerate(clean_new_texts):
+                score = fuzz.partial_ratio(clean_text, nt)
+                if score >= 95:
+                    # 避免長字串誤配對到極短字串（例如 "22 TURP—cancer..." 誤配對到 "TURP"）
+                    # 剝離標點符號後進行長度比對，只有在新字串比舊字串短時，限制其長度比例不能小於 0.5
+                    text_alnum = "".join([c for c in clean_text if c.isalnum()])
+                    nt_alnum = "".join([c for c in nt if c.isalnum()])
+                    if len(nt_alnum) < len(text_alnum):
+                        if len(nt_alnum) / len(text_alnum) < 0.5:
+                            continue
+                    matches.append((new_texts[i], score, i))
+            matches = sorted(matches, key=lambda x: x[1], reverse=True)[:3]
+            
             for m_text, score, idx in matches:
-                if score > 85:
-                    nw_rect = fitz.Rect(words_new[idx][:4])
-                    # 空間鄰近篩選：只接受垂直距離在頁面高度 50% 以內的匹配，避免飛到其他頁首頁尾
-                    if abs(nw_rect.y0 - cw_rect_old.y0) < page_new.rect.height * 0.5:
-                        hits.append(nw_rect)
+                nw_rect = fitz.Rect(words_new[idx][:4])
+                # 空間鄰近篩選：只接受垂直距離在頁面高度 90% 以內的匹配，以包容跨頁表格大位移，同時過濾無效頁首頁尾
+                if abs(nw_rect.y0 - cw_rect_old.y0) < page_new.rect.height * 0.9:
+                    hits.append(nw_rect)
 
         if hits:
             # 挑選空間上最接近的匹配項計算偏移
             best_hit = min(hits, key=lambda h: abs(h.y0 - cw_rect_old.y0) + abs(h.x0 - cw_rect_old.x0))
             dx = best_hit.x0 - cw_rect_old.x0
             dy = best_hit.y0 - cw_rect_old.y0
-            # 位移過大（大於頁面尺寸 40%）視為異常，不予採信
-            if abs(dx) < page_new.rect.width * 0.4 and abs(dy) < page_new.rect.height * 0.4:
+            # 水平位移過大（大於頁面寬度 40%）視為異常，垂直位移包容度提升至 90%
+            if abs(dx) < page_new.rect.width * 0.4 and abs(dy) < page_new.rect.height * 0.9:
                 offsets_x.append(dx)
                 offsets_y.append(dy)
 
-    # 根據匹配錨點數量決定置信度狀態
+    # 空間一致性篩選：剔除偏離中位數大於 15 像素的異常錨點位移
     if len(offsets_x) >= 2:
-        return filtered_median(offsets_x), filtered_median(offsets_y), None, "精準AI", len(offsets_x)
+        med_x = statistics.median(offsets_x)
+        med_y = statistics.median(offsets_y)
+        consistent_pairs = [(dx, dy) for dx, dy in zip(offsets_x, offsets_y) if abs(dx - med_x) < 15 and abs(dy - med_y) < 15]
+        
+        if len(consistent_pairs) >= 2:
+            cx = [p[0] for p in consistent_pairs]
+            cy = [p[1] for p in consistent_pairs]
+            return statistics.median(cx), statistics.median(cy), None, "精準AI", len(consistent_pairs)
+        elif len(consistent_pairs) == 1:
+            return consistent_pairs[0][0], consistent_pairs[0][1], None, "弱AI", 1
+            
     elif len(offsets_x) == 1:
         return offsets_x[0], offsets_y[0], None, "弱AI", 1
 
@@ -405,6 +480,7 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
     processed_offsets_map = {}
     rawdict_cache = {}
     words_cache = {}
+    spans_cache = {}
 
     for old_idx, new_idx in mapping.items():
         if old_idx >= len(doc_old) or new_idx >= len(doc_new): continue
@@ -413,6 +489,40 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
 
         annots = reader_old.pages[old_idx].Annots
         if not annots: continue
+
+        # 第一階段：預掃描本頁的所有文字型筆記，搜集投票錨點
+        voting_anchors = [] # 儲存格式：(matched_idx, y_center, weight)
+        old_h = p_old_f.rect.height
+        for annot in annots:
+            if not annot.get('/Rect'): continue
+            subtype = annot.get('/Subtype')
+            if subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly', '/Square', '/Circle', '/Redact', '/Text']:
+                r = [float(x) for x in annot['/Rect']]
+                old_rect_f = fitz.Rect(r[0], old_h - r[3], r[2], old_h - r[1])
+                y_center = (old_rect_f.y0 + old_rect_f.y1) / 2
+                
+                # 取得文字長度，忽略短字以防噪訊影響投票
+                annot_text = p_old_f.get_text("text", clip=old_rect_f).strip().replace('\n', '')
+                annot_text_clean = "".join([c for c in annot_text if c.strip() and c not in ['\uf09f', '\u2022']])
+                weight = len(annot_text_clean)
+                if weight < 6:
+                    continue # 忽略小於 6 字的短標記參與投票
+                
+                old_quadpoints = annot.get(PN('QuadPoints'))
+                text_result = find_text_based_position(p_old_f, p_new_f, old_rect_f, rawdict_cache, words_cache, old_quadpoints)
+                if not text_result:
+                    # 優先比對前頁以配合排版，按距離由近到遠搜尋：1, -1, -2, 2, -3, 3
+                    for offset in [1, -1, -2, 2, -3, 3]:
+                        cand_idx = new_idx + offset
+                        if 0 <= cand_idx < len(doc_new):
+                            if not sections_match(old_sections[old_idx], new_sections[cand_idx]):
+                                continue
+                            res = find_text_based_position(p_old_f, doc_new[cand_idx], old_rect_f, rawdict_cache, words_cache, old_quadpoints)
+                            if res:
+                                voting_anchors.append((cand_idx, y_center, weight))
+                                break
+                else:
+                    voting_anchors.append((new_idx, y_center, weight))
         if not p_new_p.Annots: p_new_p.Annots = pdfrw.PdfArray()
         if old_idx not in processed_offsets_map: processed_offsets_map[old_idx] = []
         for annot in annots:
@@ -421,10 +531,27 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             r = [float(x) for x in annot['/Rect']]
             old_h = p_old_f.rect.height
             old_rect_f = fitz.Rect(r[0], old_h - r[3], r[2], old_h - r[1])
-            target_new_idx = new_idx
+            y_center = (old_rect_f.y0 + old_rect_f.y1) / 2
+
+            # 使用距離權重局部共識決定當前標記的基準對應頁面
+            local_new_idx = new_idx
+            if voting_anchors:
+                page_scores = {}
+                for matched_idx, v_y, weight in voting_anchors:
+                    dist = abs(y_center - v_y)
+                    # 權重與距離成反比，加入 50.0 的平滑值防止除以零且平衡近鄰影響
+                    score = weight / (dist + 50.0)
+                    page_scores[matched_idx] = page_scores.get(matched_idx, 0.0) + score
+                local_new_idx = max(page_scores, key=page_scores.get)
+
+            p_new_f = doc_new[local_new_idx]
+            p_new_p = reader_new.pages[local_new_idx]
+            if not p_new_p.Annots: p_new_p.Annots = pdfrw.PdfArray()
+
+            target_new_idx = local_new_idx
             dx, dy = 0, 0
             text_result = None
-            overlaps_freetext = False
+            overlaps_freetext = False            
             freetext_idx = None
             if subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly', '/Square', '/Circle', '/Redact', '/Text']:
                 for oidx, other_annot in enumerate(annots):
@@ -455,10 +582,10 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 
                 if not found_ft:
                     ft_dx, ft_dy, ft_target_idx, ft_status, ft_match_count = find_precise_offset(
-                        p_old_f, p_new_f, ft_rect_f, processed_offsets_map[old_idx], words_cache
+                        p_old_f, p_new_f, ft_rect_f, processed_offsets_map[old_idx], spans_cache
                     )
                     if ft_target_idx is None:
-                        ft_target_idx = new_idx
+                        ft_target_idx = local_new_idx
                     processed_offsets_map[old_idx].append((ft_rect_f, ft_dx, ft_dy, ft_target_idx, True))
 
             # 文字內容精準對位 (適用於文字標註、外框等)
@@ -475,8 +602,9 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                         annot_text = p_old_f.get_text("text", clip=old_rect_f).strip().replace('\n', '')
                         annot_text_clean = "".join([c for c in annot_text if c.strip() and c not in ['\uf09f', '\u2022']])
                         if len(annot_text_clean) >= 6:
-                            for offset in [1, -1, 2]:
-                                cand_idx = new_idx + offset
+                            # 優先比對前頁以配合排版，按距離由近到遠搜尋：1, -1, -2, 2, -3, 3
+                            for offset in [1, -1, -2, 2, -3, 3]:
+                                cand_idx = local_new_idx + offset
                                 if 0 <= cand_idx < len(doc_new):
                                     if not sections_match(old_sections[old_idx], new_sections[cand_idx]):
                                         continue
@@ -520,12 +648,12 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 if not text_result:
                     # 對於螢光筆、底線等標記，若無法匹配到文字，直接留在原本的物理位置 (原地)，不要隨錨點或群組位移偏移
                     if subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly']:
-                        target_new_idx = new_idx
+                        target_new_idx = local_new_idx
                         cand_p_new = doc_new[target_new_idx]
                         dx = (cand_p_new.rect.x0 - p_old_f.rect.x0)
                         dy = (cand_p_new.rect.y0 - p_old_f.rect.y0)
                     else:
-                        text_dx, text_dy, group_target_idx, status, match_count = find_precise_offset(p_old_f, p_new_f, old_rect_f, processed_offsets_map[old_idx], words_cache)                  
+                        text_dx, text_dy, group_target_idx, status, match_count = find_precise_offset(p_old_f, p_new_f, old_rect_f, processed_offsets_map[old_idx], spans_cache)                  
                         if status == "群組" and group_target_idx is not None:
                             target_new_idx = group_target_idx
                             dx = text_dx
@@ -533,14 +661,14 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                         else:
                             best_match_count = -1
                             best_dx, best_dy = 0, 0
-                            best_target_idx = new_idx
+                            best_target_idx = local_new_idx
                             for offset in [0, 1, -1, 2]:
-                                cand_idx = new_idx + offset
+                                cand_idx = local_new_idx + offset
                                 if 0 <= cand_idx < len(doc_new):
                                     if not sections_match(old_sections[old_idx], new_sections[cand_idx]):
                                         continue
                                     cand_p_new = doc_new[cand_idx]
-                                    cand_dx, cand_dy, _, cand_status, cand_match_count = find_precise_offset(p_old_f, cand_p_new, old_rect_f, [], words_cache)
+                                    cand_dx, cand_dy, _, cand_status, cand_match_count = find_precise_offset(p_old_f, cand_p_new, old_rect_f, [], spans_cache)
                                     if cand_status in ["精準AI", "弱AI"]:
                                         if cand_match_count > best_match_count:
                                             best_match_count = cand_match_count
@@ -548,8 +676,9 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                                             best_dy = cand_dy
                                             best_target_idx = cand_idx
                             
-                            if best_match_count == -1:
-                                target_new_idx = new_idx
+                            # 弱錨點防誤跳門檻：只有在跨頁跳轉時，才要求至少要有 3 個一致的錨點以防誤跳。同頁內比對時，哪怕只有 1-2 個錨點一致也允許套用微調位移
+                            if best_target_idx != local_new_idx and best_match_count < 3:
+                                target_new_idx = local_new_idx
                                 cand_p_new = doc_new[target_new_idx]
                                 dx = (cand_p_new.rect.x0 - p_old_f.rect.x0)
                                 dy = (cand_p_new.rect.y0 - p_old_f.rect.y0)
