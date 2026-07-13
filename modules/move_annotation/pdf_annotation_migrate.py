@@ -768,6 +768,207 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
 
         return best_result, best_idx
 
+    def split_multi_item_square(old_page, old_rect, mapped_new_idx, old_section):
+        """Map a multi-row rectangular annotation into one rectangle per new page."""
+        # Do not apply this specialised flow to ordinary small boxes or thin
+        # line-like rectangles.  Those are single annotations and must retain the
+        # existing transfer behaviour.
+        if old_rect.width < 200 or old_rect.height < 100:
+            return []
+        source_items = []
+        seen = set()
+        for word in old_page.get_text("words", sort=True):
+            word_rect = fitz.Rect(word[:4])
+            if not old_rect.intersects(word_rect):
+                continue
+            # Item identifiers live in the left code column.  Numbers in the
+            # explanatory text (for example, 100-107) are not separate items.
+            if word_rect.x0 > old_rect.x0 + old_rect.width * 0.3:
+                continue
+            for code in re.findall(r"(?<!\d)\d{3}(?!\d)", word[4]):
+                key = (code, round(word_rect.y0, 1))
+                if key not in seen:
+                    source_items.append({"code": code, "rect": word_rect})
+                    seen.add(key)
+        # Narrative examples can still be inside the wide frame.  The genuine
+        # item IDs share one narrow, left-most code column.
+        if source_items:
+            code_column_x = min(item["rect"].x0 for item in source_items)
+            source_items = [
+                item for item in source_items
+                if abs(item["rect"].x0 - code_column_x) <= 12
+            ]
+        source_items.sort(key=lambda item: (item["rect"].y0, item["rect"].x0))
+        if len(source_items) < 4:
+            return []
+
+        mapped_items = []
+        for source_index, item in enumerate(source_items):
+            candidates = []
+            for offset in [0, -1, 1, -2, 2, -3, 3]:
+                candidate_idx = mapped_new_idx + offset
+                if not (0 <= candidate_idx < len(doc_new)):
+                    continue
+                if not sections_match(old_section, new_sections[candidate_idx]):
+                    continue
+                expected_x = item["rect"].x0 / max(old_page.rect.width, 1) * doc_new[candidate_idx].rect.width
+                hits = [
+                    hit for hit in doc_new[candidate_idx].search_for(item["code"])
+                    if abs(hit.x0 - expected_x) < doc_new[candidate_idx].rect.width * 0.12
+                ]
+                if len(hits) == 1:
+                    candidates.append((candidate_idx, hits[0]))
+            if candidates:
+                candidates.sort(key=lambda candidate: abs(candidate[0] - mapped_new_idx))
+                nearest_distance = abs(candidates[0][0] - mapped_new_idx)
+                # If two code-column occurrences are equally close, the item is
+                # ambiguous and the complete-box validation below will reject it.
+                if (len(candidates) == 1 or
+                        abs(candidates[1][0] - mapped_new_idx) > nearest_distance):
+                    target_idx, target_rect = candidates[0]
+                else:
+                    continue
+                mapped_items.append({
+                    **item, "source_index": source_index,
+                    "target_idx": target_idx, "target_rect": target_rect
+                })
+
+        # A wide frame can also contain numbers from explanatory text.  Keep only
+        # the consecutive code-column rows that can actually be located nearby in
+        # the new document.  This is more reliable than abandoning the whole
+        # split because a non-item number has no match.
+        if len(mapped_items) < 4:
+            return []
+
+        target_sequence = [item["target_idx"] for item in mapped_items]
+        # A real pagination split progresses monotonically through the new PDF.
+        # Alternating target pages means a repeated code was ambiguous, so it is
+        # safer to keep the original single-box behaviour than draw overlaps.
+        if any(current < previous for previous, current in zip(target_sequence, target_sequence[1:])):
+            return []
+
+        groups = []
+        for item in mapped_items:
+            if not groups or groups[-1][0]["target_idx"] != item["target_idx"]:
+                groups.append([item])
+            else:
+                groups[-1].append(item)
+
+        # Split only when this is confidently a cross-page multi-item box.  This
+        # prevents extra boxes and apparent bold borders on ordinary annotations.
+        if len(groups) < 2 or len(groups) > 3 or any(len(group) < 2 for group in groups):
+            return []
+
+        rectangles = []
+        for group_index, group in enumerate(groups):
+            target_idx = group[0]["target_idx"]
+            target_page = doc_new[target_idx]
+            source_first = group[0]
+            source_last = group[-1]
+            first_index = source_first["source_index"]
+            last_index = source_last["source_index"]
+
+            # Preserve the original horizontal span, adjusted by the code-column
+            # shift.  Vertically, expand to the next item boundary so each new
+            # rectangle contains the complete table rows on that page.
+            x_shift = statistics.median(
+                item["target_rect"].x0 - item["rect"].x0 for item in group
+            )
+            x0 = max(0, old_rect.x0 + x_shift)
+            x1 = min(target_page.rect.width, old_rect.x1 + x_shift)
+            top_pad = (source_first["rect"].y0 - old_rect.y0 if first_index == 0
+                       else min(12, (source_first["rect"].y0 - source_items[first_index - 1]["rect"].y1) / 2))
+            y0 = max(0, min(item["target_rect"].y0 for item in group) - top_pad)
+
+            next_group_item = (groups[group_index + 1][0]
+                               if group_index + 1 < len(groups) else None)
+            # Do not extend a split frame to the page bottom: after a page break
+            # that produced a visually oversized box.  Use one half-row below
+            # the final code, capped by the source frame's original bottom pad.
+            row_gaps = [
+                source_items[index + 1]["rect"].y0 - source_items[index]["rect"].y1
+                for index in range(first_index, min(last_index + 1, len(source_items) - 1))
+                if source_items[index + 1]["rect"].y0 > source_items[index]["rect"].y1
+            ]
+            half_row = statistics.median(row_gaps) / 2 if row_gaps else 18
+            bottom_pad = min(max(10, half_row), max(10, old_rect.y1 - source_last["rect"].y1))
+            y1 = min(target_page.rect.height, max(item["target_rect"].y1 for item in group) + bottom_pad)
+            rectangles.append((target_idx, fitz.Rect(x0, y0, x1, y1)))
+        return rectangles
+
+    def split_code_column_line(old_page, old_rect, mapped_new_idx, old_section):
+        """Split a vertical line by the code rows it marks across page breaks."""
+        if old_rect.height < 60 or old_rect.width > 20:
+            return []
+        line_x = (old_rect.x0 + old_rect.x1) / 2
+        source_items = []
+        for word in old_page.get_text("words", sort=True):
+            word_rect = fitz.Rect(word[:4])
+            if word_rect.y1 < old_rect.y0 - 8 or word_rect.y0 > old_rect.y1 + 8:
+                continue
+            # The line is drawn through / immediately beside the three-digit
+            # code, so ignore narrative text further away on the same row.
+            if not (word_rect.x0 - 12 <= line_x <= word_rect.x1 + 12):
+                continue
+            for code in re.findall(r"(?<!\d)\d{3}(?!\d)", word[4]):
+                source_items.append({"code": code, "rect": word_rect})
+        if source_items:
+            code_column_x = min(item["rect"].x0 for item in source_items)
+            source_items = [
+                item for item in source_items
+                if abs(item["rect"].x0 - code_column_x) <= 12
+            ]
+        if len(source_items) < 3:
+            return []
+
+        mapped_items = []
+        for item in source_items:
+            candidates = []
+            for offset in [0, -1, 1, -2, 2, -3, 3]:
+                target_idx = mapped_new_idx + offset
+                if not (0 <= target_idx < len(doc_new)):
+                    continue
+                if not sections_match(old_section, new_sections[target_idx]):
+                    continue
+                expected_x = (item["rect"].x0 / max(old_page.rect.width, 1) *
+                              doc_new[target_idx].rect.width)
+                hits = [
+                    hit for hit in doc_new[target_idx].search_for(item["code"])
+                    if abs(hit.x0 - expected_x) < doc_new[target_idx].rect.width * .12
+                ]
+                if len(hits) == 1:
+                    candidates.append((target_idx, hits[0]))
+            if not candidates:
+                continue
+            candidates.sort(key=lambda candidate: abs(candidate[0] - mapped_new_idx))
+            target_idx, target_rect = candidates[0]
+            mapped_items.append({**item, "target_idx": target_idx, "target_rect": target_rect})
+        if len(mapped_items) < 3:
+            return []
+
+        groups = []
+        for item in mapped_items:
+            if not groups or groups[-1][0]["target_idx"] != item["target_idx"]:
+                groups.append([item])
+            else:
+                groups[-1].append(item)
+        if len(groups) < 2 or any(len(group) < 2 for group in groups):
+            return []
+
+        lines = []
+        for group in groups:
+            target_idx = group[0]["target_idx"]
+            target_page = doc_new[target_idx]
+            # Preserve the line's position inside the code (for example, to the
+            # right of the leading "5"), not merely its absolute page x value.
+            x_offsets = [line_x - item["rect"].x0 for item in group]
+            x = statistics.median(item["target_rect"].x0 for item in group) + statistics.median(x_offsets)
+            y0 = min(item["target_rect"].y0 for item in group) - 4
+            y1 = max(item["target_rect"].y1 for item in group) + 4
+            lines.append((target_idx, fitz.Point(x, max(0, y0)),
+                          fitz.Point(x, min(target_page.rect.height, y1))))
+        return lines
+
     for old_idx, new_idx in mapping.items():
         if old_idx >= len(doc_old) or new_idx >= len(doc_new): continue
         p_old_f, p_new_f = doc_old[old_idx], doc_new[new_idx]
@@ -813,6 +1014,58 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             old_h = p_old_f.rect.height
             old_rect_f = fitz.Rect(r[0], old_h - r[3], r[2], old_h - r[1])
             y_center = (old_rect_f.y0 + old_rect_f.y1) / 2
+
+            if subtype == '/Square':
+                split_rectangles = split_multi_item_square(
+                    p_old_f, old_rect_f, new_idx, old_sections[old_idx]
+                )
+                if split_rectangles:
+                    for target_idx, target_rect in split_rectangles:
+                        target_page = reader_new.pages[target_idx]
+                        # pdfrw annotation objects cannot be copied with
+                        # copy.copy() (their __setstate__ is None).
+                        split_annot = pdfrw.PdfDict(annot)
+                        page_height = doc_new[target_idx].rect.height
+                        split_annot.Rect = pdfrw.PdfArray([
+                            pdfrw.PdfObject(f"{value:.4f}") for value in [
+                                target_rect.x0, page_height - target_rect.y1,
+                                target_rect.x1, page_height - target_rect.y0
+                            ]
+                        ])
+                        if split_annot.get('/P'):
+                            split_annot.P = target_page
+                        if not target_page.Annots:
+                            target_page.Annots = pdfrw.PdfArray()
+                        target_page.Annots.append(split_annot)
+                    continue
+
+            if subtype == '/Line':
+                split_lines = split_code_column_line(
+                    p_old_f, old_rect_f, new_idx, old_sections[old_idx]
+                )
+                if split_lines:
+                    for target_idx, start, end in split_lines:
+                        target_page = reader_new.pages[target_idx]
+                        split_annot = pdfrw.PdfDict(annot)
+                        page_height = doc_new[target_idx].rect.height
+                        split_annot.L = pdfrw.PdfArray([
+                            pdfrw.PdfObject(f"{start.x:.4f}"),
+                            pdfrw.PdfObject(f"{page_height - start.y:.4f}"),
+                            pdfrw.PdfObject(f"{end.x:.4f}"),
+                            pdfrw.PdfObject(f"{page_height - end.y:.4f}")
+                        ])
+                        split_annot.Rect = pdfrw.PdfArray([
+                            pdfrw.PdfObject(f"{min(start.x, end.x):.4f}"),
+                            pdfrw.PdfObject(f"{page_height - max(start.y, end.y):.4f}"),
+                            pdfrw.PdfObject(f"{max(start.x, end.x):.4f}"),
+                            pdfrw.PdfObject(f"{page_height - min(start.y, end.y):.4f}")
+                        ])
+                        if split_annot.get('/P'):
+                            split_annot.P = target_page
+                        if not target_page.Annots:
+                            target_page.Annots = pdfrw.PdfArray()
+                        target_page.Annots.append(split_annot)
+                    continue
 
             # 使用距離權重局部共識決定當前標記的基準對應頁面
             local_new_idx = new_idx
