@@ -690,6 +690,56 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
         _, dx, dy, target_idx = min(candidates, key=lambda item: item[0])
         return dx, dy, target_idx
 
+    def find_code_row_anchor(old_page, note_rect, mapped_new_idx, old_section):
+        """Move a typed side note with the nearest table-code row.
+
+        FreeText outside a frame has no reliable text in the PDF content stream.
+        In manuals it is commonly written beside a 3-digit table code, so that
+        row is a stronger anchor than another annotation elsewhere on the page.
+        """
+        candidates = []
+        max_gap = max(28, note_rect.height * .8)
+        for word in old_page.get_text("words", sort=True):
+            code_rect = fitz.Rect(word[:4])
+            codes = re.findall(r"(?<!\d)\d{3}(?!\d)", word[4])
+            if not codes or code_rect.x1 > note_rect.x0 + 20:
+                continue
+            vertical_gap = max(code_rect.y0 - note_rect.y1, note_rect.y0 - code_rect.y1, 0)
+            if vertical_gap > max_gap:
+                continue
+            center_gap = abs(
+                (code_rect.y0 + code_rect.y1) / 2 -
+                (note_rect.y0 + note_rect.y1) / 2
+            )
+            candidates.append((vertical_gap * 100 + center_gap, codes[0], code_rect))
+        if not candidates:
+            return None
+        _, code, source_rect = min(candidates, key=lambda item: item[0])
+
+        target_candidates = []
+        for offset in [0, -1, 1, -2, 2, -3, 3]:
+            target_idx = mapped_new_idx + offset
+            if not (0 <= target_idx < len(doc_new)):
+                continue
+            if not sections_match(old_section, new_sections[target_idx]):
+                continue
+            target_page = doc_new[target_idx]
+            expected_x = source_rect.x0 / max(old_page.rect.width, 1) * target_page.rect.width
+            hits = [
+                hit for hit in target_page.search_for(code)
+                if abs(hit.x0 - expected_x) < target_page.rect.width * .12
+            ]
+            if hits:
+                target_rect = min(hits, key=lambda hit: abs(hit.x0 - expected_x))
+                target_candidates.append((abs(offset), target_idx, target_rect))
+        if not target_candidates:
+            return None
+        _, target_idx, target_rect = min(target_candidates, key=lambda item: item[0])
+        dx = target_rect.x0 - source_rect.x0
+        dy = ((target_rect.y0 + target_rect.y1) -
+              (source_rect.y0 + source_rect.y1)) / 2
+        return dx, dy, target_idx
+
     def annotation_context(page, annotation_rect, radius=4):
         """Build a small, local text fingerprint around an annotation."""
         words = page.get_text("words", sort=True)
@@ -918,6 +968,18 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 item for item in source_items
                 if abs(item["rect"].x0 - code_column_x) <= 12
             ]
+            # A vertical separator normally marks one code family (for example
+            # 500-532).  Do not let the next 6xx section lengthen that same
+            # separator merely because it happens to be in the nearby column.
+            prefix_counts = {}
+            for item in source_items:
+                prefix_counts[item["code"][0]] = prefix_counts.get(item["code"][0], 0) + 1
+            dominant_prefix, dominant_count = max(prefix_counts.items(), key=lambda item: item[1])
+            if dominant_count >= 3:
+                source_items = [
+                    item for item in source_items
+                    if item["code"].startswith(dominant_prefix)
+                ]
         if len(source_items) < 3:
             return []
 
@@ -952,7 +1014,10 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 groups.append([item])
             else:
                 groups[-1].append(item)
-        if len(groups) < 2 or any(len(group) < 2 for group in groups):
+        # A line may stay on one page after reflow.  It still benefits from being
+        # rebuilt from its marked code rows instead of receiving a page-level
+        # translation.  Split only when the rows genuinely land on more pages.
+        if len(groups) > 3 or any(len(group) < 2 for group in groups):
             return []
 
         lines = []
@@ -968,6 +1033,67 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             lines.append((target_idx, fitz.Point(x, max(0, y0)),
                           fitz.Point(x, min(target_page.rect.height, y1))))
         return lines
+
+    def align_horizontal_line(old_page, old_rect, mapped_new_idx, old_section):
+        """Place a horizontal divider from the text rows immediately around it."""
+        if old_rect.width < 120 or old_rect.height > 20:
+            return None
+        line_y = (old_rect.y0 + old_rect.y1) / 2
+        anchors = []
+        for word in old_page.get_text("words", sort=True):
+            word_rect = fitz.Rect(word[:4])
+            if abs((word_rect.y0 + word_rect.y1) / 2 - line_y) > 26:
+                continue
+            text = "".join(word[4].split())
+            if len(text) < 2 or len(text) > 20:
+                continue
+            anchors.append((text, word_rect))
+        if not anchors:
+            return None
+
+        page_votes = {}
+        page_offsets = {}
+        for offset in [0, -1, 1, -2, 2, -3, 3]:
+            target_idx = mapped_new_idx + offset
+            if not (0 <= target_idx < len(doc_new)):
+                continue
+            if not sections_match(old_section, new_sections[target_idx]):
+                continue
+            target_page = doc_new[target_idx]
+            offsets = []
+            for text, source_rect in anchors:
+                hits = target_page.search_for(text)
+                if not hits:
+                    continue
+                # A divider usually spans a whole table; choose the occurrence
+                # preserving the anchor's horizontal column.
+                expected_x = source_rect.x0 / max(old_page.rect.width, 1) * target_page.rect.width
+                hit = min(hits, key=lambda candidate: abs(candidate.x0 - expected_x))
+                if abs(hit.x0 - expected_x) > target_page.rect.width * .18:
+                    continue
+                offsets.append((hit.y0 + hit.y1 - source_rect.y0 - source_rect.y1) / 2)
+            if offsets:
+                page_votes[target_idx] = len(offsets)
+                page_offsets[target_idx] = offsets
+        if not page_votes:
+            return None
+
+        target_idx = max(
+            page_votes,
+            key=lambda index: (page_votes[index], -abs(index - mapped_new_idx))
+        )
+        # One matched label is too weak for a broad divider and risks snapping it
+        # to an unrelated repeated phrase.
+        if page_votes[target_idx] < 2:
+            return None
+        target_page = doc_new[target_idx]
+        dy = statistics.median(page_offsets[target_idx])
+        y = min(max(0, line_y + dy), target_page.rect.height)
+        return (
+            target_idx,
+            fitz.Point(old_rect.x0 / old_page.rect.width * target_page.rect.width, y),
+            fitz.Point(old_rect.x1 / old_page.rect.width * target_page.rect.width, y)
+        )
 
     for old_idx, new_idx in mapping.items():
         if old_idx >= len(doc_old) or new_idx >= len(doc_new): continue
@@ -1043,22 +1169,39 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 split_lines = split_code_column_line(
                     p_old_f, old_rect_f, new_idx, old_sections[old_idx]
                 )
+                if not split_lines:
+                    aligned_line = align_horizontal_line(
+                        p_old_f, old_rect_f, new_idx, old_sections[old_idx]
+                    )
+                    split_lines = [aligned_line] if aligned_line else []
                 if split_lines:
                     for target_idx, start, end in split_lines:
                         target_page = reader_new.pages[target_idx]
                         split_annot = pdfrw.PdfDict(annot)
                         page_height = doc_new[target_idx].rect.height
+                        # A line's old appearance stream contains drawing
+                        # commands at its former coordinates.  Some viewers keep
+                        # showing that cached stream until the annotation is
+                        # clicked.  Remove it so the moved /L is rendered on the
+                        # first open.
+                        for key in ['/AP', '/RD', '/BE']:
+                            if split_annot.get(key):
+                                del split_annot[key]
                         split_annot.L = pdfrw.PdfArray([
                             pdfrw.PdfObject(f"{start.x:.4f}"),
                             pdfrw.PdfObject(f"{page_height - start.y:.4f}"),
                             pdfrw.PdfObject(f"{end.x:.4f}"),
                             pdfrw.PdfObject(f"{page_height - end.y:.4f}")
                         ])
+                        # Keep a non-zero rectangle around a vertical line.  A
+                        # zero-width /Rect is legal in practice but commonly
+                        # gets culled by PDF viewers until they redraw it.
+                        rect_pad = max(1.5, abs(end.x - start.x) / 2 + 0.5)
                         split_annot.Rect = pdfrw.PdfArray([
-                            pdfrw.PdfObject(f"{min(start.x, end.x):.4f}"),
-                            pdfrw.PdfObject(f"{page_height - max(start.y, end.y):.4f}"),
-                            pdfrw.PdfObject(f"{max(start.x, end.x):.4f}"),
-                            pdfrw.PdfObject(f"{page_height - min(start.y, end.y):.4f}")
+                            pdfrw.PdfObject(f"{min(start.x, end.x) - rect_pad:.4f}"),
+                            pdfrw.PdfObject(f"{page_height - max(start.y, end.y) - rect_pad:.4f}"),
+                            pdfrw.PdfObject(f"{max(start.x, end.x) + rect_pad:.4f}"),
+                            pdfrw.PdfObject(f"{page_height - min(start.y, end.y) + rect_pad:.4f}")
                         ])
                         if split_annot.get('/P'):
                             split_annot.P = target_page
@@ -1170,10 +1313,17 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 status = "未群組"
                 if not text_result:
                     if subtype == '/FreeText':
+                        code_row = find_code_row_anchor(
+                            p_old_f, old_rect_f, new_idx,
+                            old_sections[old_idx]
+                        )
                         same_row = find_same_row_reference(
                             old_rect_f, processed_offsets_map[old_idx]
                         )
-                        if same_row:
+                        if code_row:
+                            best_dx, best_dy, best_target_idx = code_row
+                            best_status = "code-row-anchor"
+                        elif same_row:
                             # 同列螢光筆已透過文字重繪成功，直接共用它的位移。
                             # 這能保留「文字寫在被標示內容右側」的語意。
                             best_dx, best_dy, best_target_idx = same_row
@@ -1257,7 +1407,7 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             # 註解屬性清理與平移寫入：
             # 1. 對於 FreeText，保留 /AP 與 /DA 屬性以完整顯示中文字型。
             # 2. 對於螢光筆與底線等，刪除舊的 /AP 外觀流，強迫 PDF 閱讀器根據新的 /QuadPoints 重新生成正確的畫筆外觀，避免劃一大片。
-            if subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly']:
+            if subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly', '/Line']:
                 for key in ['/AP', '/RD', '/IT']:
                     if annot.get(key):
                         del annot[key]
