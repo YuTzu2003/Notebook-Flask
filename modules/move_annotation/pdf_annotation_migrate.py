@@ -74,24 +74,80 @@ def filtered_median(values, max_deviation=15):
     return statistics.median(filtered) if filtered else med
 
 # 空間幾何與錨點比對定位
-def find_precise_offset(page_old, page_new, old_rect, processed_offsets, words_cache=None):
-    for entry in processed_offsets:
-        if len(entry) == 5:
-            ref_rect, ref_dx, ref_dy, ref_target_idx, is_direct = entry
-            if not is_direct:
-                continue
-        else:
-            ref_rect, ref_dx, ref_dy, ref_target_idx = entry
-        if abs(old_rect.x0 - ref_rect.x0) < 50 and abs(old_rect.y0 - ref_rect.y0) < 120:
-            return ref_dx, ref_dy, ref_target_idx, "群組", 999 
+def find_precise_offset(page_old, page_new, old_rect, processed_offsets, spans_cache=None,
+                        allow_group=True, prefer_context=False):
+    # FreeText must be located from its own surrounding document text.  Reusing a
+    # nearby annotation's movement is quick, but a note can sit beside a repeated
+    # label or a table row and then lands in the wrong place.
+    if allow_group:
+        for entry in processed_offsets:
+            if len(entry) == 5:
+                ref_rect, ref_dx, ref_dy, ref_target_idx, is_direct = entry
+                if not is_direct:
+                    continue
+            else:
+                ref_rect, ref_dx, ref_dy, ref_target_idx = entry
+            if abs(old_rect.x0 - ref_rect.x0) < 50 and abs(old_rect.y0 - ref_rect.y0) < 120:
+                return ref_dx, ref_dy, ref_target_idx, "群組", 999
         
     def get_words(p):
-        if words_cache is not None:
+        if spans_cache is not None:
             key = (id(p.parent), p.number)
-            if key not in words_cache:
-                words_cache[key] = p.get_text("words")
-            return words_cache[key]
-        return p.get_text("words")
+            if key not in spans_cache:
+                spans = []
+                raw = p.get_text("dict")
+                for block in raw.get("blocks", []):
+                    for line in block.get("lines", []):
+                        for span in line.get("spans", []):
+                            t = span.get("text", "").strip()
+                            bbox = span.get("bbox")
+                            if any('\u4e00' <= c <= '\u9fff' for c in t):
+                                t_clean = "".join(t.split())
+                                if len(t_clean) >= 3:
+                                    spans.append((bbox[0], bbox[1], bbox[2], bbox[3], t_clean))
+                            else:
+                                words = t.split()
+                                idx = 0
+                                for w in words:
+                                    start_idx = t.find(w, idx)
+                                    end_idx = start_idx + len(w)
+                                    idx = end_idx
+                                    L = len(t)
+                                    W = bbox[2] - bbox[0]
+                                    word_x0 = bbox[0] + (start_idx / L) * W if L > 0 else bbox[0]
+                                    word_x1 = bbox[0] + (end_idx / L) * W if L > 0 else bbox[2]
+                                    w_clean = "".join(w.split())
+                                    if len(w_clean) >= 3:
+                                        spans.append((word_x0, bbox[1], word_x1, bbox[3], w_clean))
+                spans_cache[key] = spans
+            return spans_cache[key]
+        
+        spans = []
+        raw = p.get_text("dict")
+        for block in raw.get("blocks", []):
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    t = span.get("text", "").strip()
+                    bbox = span.get("bbox")
+                    if any('\u4e00' <= c <= '\u9fff' for c in t):
+                        t_clean = "".join(t.split())
+                        if len(t_clean) >= 3:
+                            spans.append((bbox[0], bbox[1], bbox[2], bbox[3], t_clean))
+                    else:
+                        words = t.split()
+                        idx = 0
+                        for w in words:
+                            start_idx = t.find(w, idx)
+                            end_idx = start_idx + len(w)
+                            idx = end_idx
+                            L = len(t)
+                            W = bbox[2] - bbox[0]
+                            word_x0 = bbox[0] + (start_idx / L) * W if L > 0 else bbox[0]
+                            word_x1 = bbox[0] + (end_idx / L) * W if L > 0 else bbox[2]
+                            w_clean = "".join(w.split())
+                            if len(w_clean) >= 3:
+                                spans.append((word_x0, bbox[1], word_x1, bbox[3], w_clean))
+        return spans
 
     words_old = get_words(page_old)
     if not words_old: return 0, 0, None, "無舊文保底", 0
@@ -137,10 +193,15 @@ def find_precise_offset(page_old, page_new, old_rect, processed_offsets, words_c
 
     offsets_x = []
     offsets_y = []
+    # Keep all plausible movements for text notes.  The legacy path chooses the
+    # nearest occurrence of each word first; that is unreliable when a table has
+    # the same word in several rows.  Clustering all surrounding anchors lets the
+    # local sentence/row decide the movement instead.
+    context_candidates = []
     new_texts = [nw[4].strip() for nw in words_new]
 
     # 在新版頁面中搜尋這 12 個錨點
-    for cw in candidate_anchors:
+    for anchor_index, cw in enumerate(candidate_anchors):
         text = cw[4].strip()
         if len(text) < 3: continue 
         
@@ -149,34 +210,87 @@ def find_precise_offset(page_old, page_new, old_rect, processed_offsets, words_c
         
         # 如果無法精準搜尋，啟動模糊相似度搜尋 (Fuzzy Match)
         if (not hits or len(hits) > 3) and len(text) >= 3:
-            matches = process.extract(text, new_texts, scorer=fuzz.ratio, limit=3)
+            clean_text = "".join(text.split())
+            clean_new_texts = ["".join(nt.split()) for nt in new_texts]
+            matches = []
+            for i, nt in enumerate(clean_new_texts):
+                score = fuzz.partial_ratio(clean_text, nt)
+                if score >= 95:
+                    # 避免長字串誤配對到極短字串（例如 "22 TURP—cancer..." 誤配對到 "TURP"）
+                    # 剝離標點符號後進行長度比對，只有在新字串比舊字串短時，限制其長度比例不能小於 0.5
+                    text_alnum = "".join([c for c in clean_text if c.isalnum()])
+                    nt_alnum = "".join([c for c in nt if c.isalnum()])
+                    if len(nt_alnum) < len(text_alnum):
+                        if len(nt_alnum) / len(text_alnum) < 0.5:
+                            continue
+                    matches.append((new_texts[i], score, i))
+            matches = sorted(matches, key=lambda x: x[1], reverse=True)[:3]
+            
             for m_text, score, idx in matches:
-                if score > 85:
-                    nw_rect = fitz.Rect(words_new[idx][:4])
-                    # 空間鄰近篩選：只接受垂直距離在頁面高度 50% 以內的匹配，避免飛到其他頁首頁尾
-                    if abs(nw_rect.y0 - cw_rect_old.y0) < page_new.rect.height * 0.5:
-                        hits.append(nw_rect)
+                nw_rect = fitz.Rect(words_new[idx][:4])
+                # 空間鄰近篩選：只接受垂直距離在頁面高度 90% 以內的匹配，以包容跨頁表格大位移，同時過濾無效頁首頁尾
+                if abs(nw_rect.y0 - cw_rect_old.y0) < page_new.rect.height * 0.9:
+                    hits.append(nw_rect)
 
         if hits:
-            # 挑選空間上最接近的匹配項計算偏移
-            best_hit = min(hits, key=lambda h: abs(h.y0 - cw_rect_old.y0) + abs(h.x0 - cw_rect_old.x0))
-            dx = best_hit.x0 - cw_rect_old.x0
-            dy = best_hit.y0 - cw_rect_old.y0
-            # 位移過大（大於頁面尺寸 40%）視為異常，不予採信
-            if abs(dx) < page_new.rect.width * 0.4 and abs(dy) < page_new.rect.height * 0.4:
+            valid_hits = []
+            for hit in hits:
+                dx = hit.x0 - cw_rect_old.x0
+                dy = hit.y0 - cw_rect_old.y0
+                # 水平位移過大（大於頁面寬度 40%）視為異常，垂直位移包容度提升至 90%
+                if abs(dx) < page_new.rect.width * 0.4 and abs(dy) < page_new.rect.height * 0.9:
+                    valid_hits.append((dx, dy))
+
+            if prefer_context:
+                context_candidates.extend((dx, dy, anchor_index) for dx, dy in valid_hits)
+            elif valid_hits:
+                # 非文字筆記保留原本以幾何距離選取的行為。
+                dx, dy = min(
+                    valid_hits,
+                    key=lambda item: abs(item[1]) + abs(item[0])
+                )
                 offsets_x.append(dx)
                 offsets_y.append(dy)
 
-    # 根據匹配錨點數量決定置信度狀態
+    if prefer_context and context_candidates:
+        # 尋找由最多「不同」周邊文字錨點支持的位移群；同一個重複詞
+        # 不會因為出現多次就壓過相鄰句子的共同證據。
+        best_cluster = []
+        for dx0, dy0, _ in context_candidates:
+            cluster = [
+                item for item in context_candidates
+                if abs(item[0] - dx0) < 18 and abs(item[1] - dy0) < 18
+            ]
+            if len({item[2] for item in cluster}) > len({item[2] for item in best_cluster}):
+                best_cluster = cluster
+
+        unique_anchor_count = len({item[2] for item in best_cluster})
+        if unique_anchor_count:
+            dx = statistics.median(item[0] for item in best_cluster)
+            dy = statistics.median(item[1] for item in best_cluster)
+            status = "精準AI" if unique_anchor_count >= 2 else "弱AI"
+            return dx, dy, None, status, unique_anchor_count
+
+    # 空間一致性篩選：剔除偏離中位數大於 15 像素的異常錨點位移
     if len(offsets_x) >= 2:
-        return filtered_median(offsets_x), filtered_median(offsets_y), None, "精準AI", len(offsets_x)
+        med_x = statistics.median(offsets_x)
+        med_y = statistics.median(offsets_y)
+        consistent_pairs = [(dx, dy) for dx, dy in zip(offsets_x, offsets_y) if abs(dx - med_x) < 15 and abs(dy - med_y) < 15]
+        
+        if len(consistent_pairs) >= 2:
+            cx = [p[0] for p in consistent_pairs]
+            cy = [p[1] for p in consistent_pairs]
+            return statistics.median(cx), statistics.median(cy), None, "精準AI", len(consistent_pairs)
+        elif len(consistent_pairs) == 1:
+            return consistent_pairs[0][0], consistent_pairs[0][1], None, "弱AI", 1
+            
     elif len(offsets_x) == 1:
         return offsets_x[0], offsets_y[0], None, "弱AI", 1
 
     return 0, 0, None, "兜底零位移", 0
 
 # 全文 context 模糊比對演算法 (適用於劃線、螢光筆)
-def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None, words_cache=None):
+def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None, words_cache=None, old_quadpoints=None):
     def get_page_chars(page):
         if rawdict_cache is not None:
             key = (id(page.parent), page.number)
@@ -208,98 +322,242 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
 
     # 1. 提取舊頁面中被標記覆蓋的字元
     old_chars = get_page_chars(page_old)
+    
+    quad_rects = []
+    old_h = page_old.rect.height
+    if old_quadpoints:
+        try:
+            pts = [float(x) for x in old_quadpoints]
+            for i in range(0, len(pts), 8):
+                if i + 7 < len(pts):
+                    line_pts = pts[i:i+8]
+                    xs = line_pts[0::2]
+                    ys = line_pts[1::2]
+                    quad_rects.append(fitz.Rect(min(xs), old_h - max(ys), max(xs), old_h - min(ys)))
+        except Exception as e:
+            print("Error parsing old_quadpoints in find_text_based_position:", e)
+
     covered_indices = []
     for idx, c in enumerate(old_chars):
         c_rect = fitz.Rect(c[:4])
-        if old_rect_f.intersects(c_rect):
-            overlap = old_rect_f & c_rect
-            if overlap.get_area() / max(c_rect.get_area(), 1) > 0.3:
-                covered_indices.append(idx)
+        is_covered = False
+        if quad_rects:
+            for qr in quad_rects:
+                if qr.intersects(c_rect):
+                    overlap = qr & c_rect
+                    if overlap.get_area() / max(c_rect.get_area(), 1) > 0.3:
+                        is_covered = True
+                        break
+        else:
+            if old_rect_f.intersects(c_rect):
+                overlap = old_rect_f & c_rect
+                if overlap.get_area() / max(c_rect.get_area(), 1) > 0.3:
+                    is_covered = True
+        
+        if is_covered:
+            covered_indices.append(idx)
 
     if not covered_indices:
         return None
 
-    # 找出核心覆蓋文字的起訖點
-    start_idx = covered_indices[0]
-    end_idx = covered_indices[-1]
-    covered = old_chars[start_idx:end_idx + 1]
+    def local_context(page, rect, radius=16):
+        """Return nearby reading-order text for choosing between repeated hits."""
+        words = page.get_text("words", sort=True)
+        if not words:
+            return ""
+        touched = [
+            index for index, word in enumerate(words)
+            if rect.intersects(fitz.Rect(word[:4]))
+        ]
+        if not touched:
+            return ""
+        start = max(0, min(touched) - radius)
+        end = min(len(words), max(touched) + radius + 1)
+        return "".join("".join(word[4].split()) for word in words[start:end])
 
-    # 2. 建立含有前後文 (Context) 的舊版目標字串，解決重複文句的對齊困擾
-    context_len = 6
-    ctx_start = max(0, start_idx - context_len)
-    ctx_end = min(len(old_chars), end_idx + 1 + context_len)
-    
-    old_pattern_str = "".join([c[4] for c in old_chars[ctx_start:ctx_end]])
-    len_prefix = start_idx - ctx_start
-    len_core = (end_idx - start_idx) + 1
+    def row_context(page, rect):
+        """Return the text in the table row(s) occupied by an annotation."""
+        vertical_padding = max(10, rect.height * 0.35)
+        row_words = [
+            word for word in page.get_text("words")
+            if word[3] >= rect.y0 - vertical_padding and word[1] <= rect.y1 + vertical_padding
+        ]
+        row_words.sort(key=lambda word: (round(word[1] / 8), word[0]))
+        return "".join("".join(word[4].split()) for word in row_words)
 
-    # 3. 獲取新頁面字元並拼接成長字串
+    def hit_context_score(source_local, source_row, hit):
+        target_local = local_context(page_new, hit)
+        target_row = row_context(page_new, hit)
+        # In tables, the row signature includes the left-side code.  It is much
+        # stronger evidence than a repeated phrase in the definition column.
+        return (
+            fuzz.ratio(source_row, target_row) * 0.7 +
+            fuzz.ratio(source_local, target_local) * 0.2 +
+            fuzz.partial_ratio(source_local, target_local) * 0.1
+        )
+
+    def result_from_direct_hit(hit):
+        new_h = page_new.rect.height
+        old_h = page_old.rect.height
+        old_covered = [old_chars[index] for index in covered_indices]
+        old_rect = fitz.Rect(
+            min(char[0] for char in old_covered), min(char[1] for char in old_covered),
+            max(char[2] for char in old_covered), max(char[3] for char in old_covered)
+        )
+        return (
+            [hit.x0, new_h - hit.y0, hit.x1, new_h - hit.y0,
+             hit.x0, new_h - hit.y1, hit.x1, new_h - hit.y1],
+            [hit.x0, new_h - hit.y1, hit.x1, new_h - hit.y0],
+            [old_rect.x0, old_h - old_rect.y1, old_rect.x1, old_h - old_rect.y0]
+        )
+
+    # Search the marked phrase directly before falling back to full-page sequence
+    # alignment.  Short phrases are disambiguated below with their local context.
+    covered_text = "".join(old_chars[index][4] for index in covered_indices)
+    direct_hits = []
+    if len("".join(covered_text.split())) >= 2:
+        try:
+            direct_hits = page_new.search_for(covered_text)
+        except Exception:
+            direct_hits = []
+    if len(direct_hits) == 1:
+        return result_from_direct_hit(direct_hits[0])
+    if len(direct_hits) > 1:
+        # Repeated phrases such as "後續追蹤或治療" must not be chosen by
+        # vertical position alone.  Compare the surrounding sentence/table row
+        # and use the hit with clearly stronger local context.
+        source_context = local_context(page_old, old_rect_f)
+        source_row = row_context(page_old, old_rect_f)
+        scored_hits = [
+            (hit_context_score(source_context, source_row, hit), hit)
+            for hit in direct_hits
+        ]
+        scored_hits.sort(key=lambda item: item[0], reverse=True)
+        if (scored_hits and scored_hits[0][0] >= 65 and
+                (len(scored_hits) == 1 or scored_hits[0][0] - scored_hits[1][0] >= 2)):
+            return result_from_direct_hit(scored_hits[0][1])
+
+    # A revised manual can slightly change a marked expression (for example,
+    # "緩和治療" to "緩和性手術").  If the full phrase disappeared, search its
+    # longest surviving fragments and accept one only when the surrounding row
+    # strongly agrees with the old annotation's context.
+    normalized_covered = "".join(covered_text.split())
+    # Limit this fallback to genuinely short changed labels.  Enumerating every
+    # substring of a long highlighted sentence causes a prohibitive number of PDF
+    # searches on large manuals.
+    if not direct_hits and 4 <= len(normalized_covered) <= 12:
+        source_context = local_context(page_old, old_rect_f)
+        source_row = row_context(page_old, old_rect_f)
+        fragment_hits = []
+        seen_fragments = set()
+        minimum_length = max(2, len(normalized_covered) - 3)
+        for length in range(len(normalized_covered) - 1, minimum_length - 1, -1):
+            for start in range(0, len(normalized_covered) - length + 1):
+                fragment = normalized_covered[start:start + length]
+                if fragment in seen_fragments:
+                    continue
+                seen_fragments.add(fragment)
+                for hit in page_new.search_for(fragment):
+                    score = hit_context_score(source_context, source_row, hit)
+                    fragment_hits.append((score, len(fragment), hit))
+        if fragment_hits:
+            fragment_hits.sort(key=lambda item: (item[0], item[1]), reverse=True)
+            best_score, _, best_hit = fragment_hits[0]
+            if best_score >= 65:
+                return result_from_direct_hit(best_hit)
+
+    # 2. 獲取新頁面字元
     new_chars = get_page_chars(page_new)
     if not new_chars:
         return None
 
-    new_str = "".join([c[4] for c in new_chars])
-    
-    best_match_start = -1
-    best_match_end = -1
-    best_metric = -9999.0
+    # --- 全頁字元對齊對位模組 (Global Page-Level Alignment with Space/Case Normalization) ---
+    def build_normalized_mapping(char_list):
+        import unicodedata
+        norm_str = ""
+        index_map = []
+        for idx, c in enumerate(char_list):
+            char_text = c[4]
+            # 過濾控制字元、項目符號及隱形字元
+            if char_text.strip() and char_text not in ['\uf09f', '\u2022', '\xad', '\u200b']:
+                # 1. NFKC 標準化 (將全形英文/數字轉換為半形，並將複合字元分解為標準形式)
+                norm_c = unicodedata.normalize('NFKC', char_text).lower()
+                # 2. 標點符號與括號標準化，消除新舊版因為字型或輸入法不同導致的對位落差
+                norm_c = norm_c.replace('（', '(').replace('）', ')')
+                norm_c = norm_c.replace('：', ':').replace('；', ';')
+                norm_c = norm_c.replace('，', ',').replace('。', '.')
+                norm_c = norm_c.replace('、', ',')
+                if norm_c:
+                    # 保留首個字元以確保 1-to-1 索引長度對齊
+                    norm_str += norm_c[0]
+                    index_map.append(idx)
+        return norm_str, index_map
 
-    # 4. 優先嘗試完整上下文的精準子字串匹配
-    exact_idx = new_str.find(old_pattern_str)
-    if exact_idx != -1:
-        # 新版可能有多處相同的背景字，用距離來判定最接近的項
-        for start_char_idx in range(len(new_chars) - len(old_pattern_str) + 1):
-            cand_str = "".join([nc[4] for nc in new_chars[start_char_idx : start_char_idx + len(old_pattern_str)]])
-            if cand_str == old_pattern_str:
-                cand_x0 = new_chars[start_char_idx + len_prefix][0]
-                cand_y0 = new_chars[start_char_idx + len_prefix][1]
-                dist = abs(cand_x0 - old_rect_f.x0) + abs(cand_y0 - old_rect_f.y0)
-                metric = 1.0 - (dist / 10000.0)
-                if metric > best_metric:
-                    best_metric = metric
-                    best_match_start = start_char_idx
-                    best_match_end = start_char_idx + len(old_pattern_str)
-                    
-    # 5. 若無法精準匹配（可能新舊版增減了標點或空白），啟動滑動視窗進行模糊比對
-    if best_match_start == -1:
-        window_size = len(old_pattern_str)
-        for start in range(len(new_chars) - window_size + 3):
-            for delta in [-2, -1, 0, 1, 2]: # 容忍標點符號的增刪
-                end = start + window_size + delta
-                if end > len(new_chars) or end <= start:
-                    continue
-                    
-                new_cand_str = new_str[start:end] # 效能優化：使用字串切片取代列表生成式
-                score = fuzz.ratio(old_pattern_str, new_cand_str) / 100.0
-                
-                # 計算距離懲罰，防範段落漂移到遙遠的重複句上
-                cand_x0 = new_chars[start][0]
-                cand_y0 = new_chars[start][1]
-                dist = abs(cand_x0 - old_rect_f.x0) + abs(cand_y0 - old_rect_f.y0)
-                metric = score - (dist / 8000.0)
-                
-                if score > 0.82 and metric > best_metric: # 相似度門檻為 82%
-                    best_metric = metric
-                    best_match_start = start
-                    best_match_end = end
+    old_norm_str, old_index_map = build_normalized_mapping(old_chars)
+    new_norm_str, new_index_map = build_normalized_mapping(new_chars)
 
-    if best_match_start < 0:
+    covered_norm_indices = [i for i, x in enumerate(old_index_map) if x in covered_indices]
+    mapped_norm_indices = []
+
+    # A highlight often covers only a short word (for example, a status code in a
+    # table).  That word may occur many times on the new page.  First locate it
+    # through a unique surrounding text window, then keep only the characters at
+    # the original offset inside that window.  This is more reliable than a
+    # full-page alignment for repeated words.
+    if covered_norm_indices:
+        window_start = max(0, min(covered_norm_indices) - 24)
+        window_end = min(len(old_norm_str), max(covered_norm_indices) + 25)
+        context = old_norm_str[window_start:window_end]
+        if len(context) >= 8:
+            occurrences = []
+            search_start = 0
+            while True:
+                found_at = new_norm_str.find(context, search_start)
+                if found_at < 0:
+                    break
+                occurrences.append(found_at)
+                search_start = found_at + 1
+            if len(occurrences) == 1:
+                target_start = occurrences[0]
+                mapped_norm_indices = [
+                    target_start + (index - window_start)
+                    for index in covered_norm_indices
+                ]
+
+    if not mapped_norm_indices:
+        import difflib
+        matcher = difflib.SequenceMatcher(None, old_norm_str, new_norm_str, autojunk=False)
+        matching_blocks = matcher.get_matching_blocks()
+        for x in covered_norm_indices:
+            for a, b, size in matching_blocks:
+                if a <= x < a + size:
+                    mapped_norm_indices.append(b + (x - a))
+                    break
+
+    if not mapped_norm_indices:
         return None
+        
+    mapped_orig_indices = [new_index_map[x] for x in mapped_norm_indices]
+    matched = [new_chars[x] for x in mapped_orig_indices]
+    matched.sort(key=lambda x: (x[1], x[0])) # 確保按閱讀順序排序
 
-    # 從新頁面的匹配區間中，等比例切出目標核心文字並處理單字展開
-    total_matched_chars = new_chars[best_match_start:best_match_end]
-    ratio_start = len_prefix / len(old_pattern_str)
-    ratio_core = len_core / len(old_pattern_str)
-    
-    new_core_start = int(len(total_matched_chars) * ratio_start)
-    new_core_end = new_core_start + int(len(total_matched_chars) * ratio_core)
-    
-    new_core_start = max(0, min(new_core_start, len(total_matched_chars) - 1)) 
-    new_core_end = max(new_core_start + 1, min(new_core_end, len(total_matched_chars)))
-    
-    matched = total_matched_chars[new_core_start:new_core_end]
     if not matched:
         return None
+
+    # --- 雙重驗證過濾器 (False Positive Validator) ---
+    # 1. 確保匹配比例足夠高 (>= 60%)
+    match_rate = len(mapped_norm_indices) / max(len(covered_norm_indices), 1)
+    if match_rate < 0.60:
+        return None
+
+    # 2. 針對短字句 (長度小於 6) 限制垂直位移，防止高頻率重複單字錯位
+    norm_len = len(covered_norm_indices)
+    if norm_len < 6:
+        y_new_center = (min(c[1] for c in matched) + max(c[3] for c in matched)) / 2
+        covered = [old_chars[x] for x in covered_indices]
+        y_old_center = (min(c[1] for c in covered) + max(c[3] for c in covered)) / 2
+        if abs(y_new_center - y_old_center) > 150:
+            return None
 
     new_words = get_words(page_new)
     english_word_rects = [fitz.Rect(w[:4]) for w in new_words if not any('\u4e00' <= char <= '\u9fff' for char in w[4])]
@@ -323,11 +581,11 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
 
     new_h = page_new.rect.height
 
-    # 將匹配字元依行分組 (小於 6pt 視為同行)
+    # 將匹配字元依行分組 (小於 10pt 視為同行，容忍上下標/公式等引起的微小垂直位移)
     lines = []
     current_line = [matched[0]]
     for w in matched[1:]:
-        if abs(w[1] - current_line[-1][1]) < 6:
+        if abs(w[1] - current_line[-1][1]) < 10:
             current_line.append(w)
         else:
             lines.append(current_line)
@@ -360,6 +618,7 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
     pdf_rect = [union_rect.x0, new_h - union_rect.y1, union_rect.x1, new_h - union_rect.y0]
 
     # 計算舊頁面中覆蓋矩形
+    covered = [old_chars[x] for x in covered_indices]
     x0_old = min(c[0] for c in covered)
     y0_old = min(c[1] for c in covered)
     x1_old = max(c[2] for c in covered)
@@ -392,6 +651,449 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
     processed_offsets_map = {}
     rawdict_cache = {}
     words_cache = {}
+    spans_cache = {}
+
+    def find_same_row_reference(note_rect, processed_offsets):
+        """Return a direct annotation movement from the same visual row.
+
+        A typed note is often placed to the right of a highlighted code or phrase.
+        The rectangles do not overlap horizontally, so ordinary intersection and
+        nearby-group checks miss this relationship.
+        """
+        candidates = []
+        for entry in processed_offsets:
+            if len(entry) != 5:
+                continue
+            reference_rect, dx, dy, target_idx, is_direct = entry
+            if not is_direct:
+                continue
+            vertical_gap = max(
+                reference_rect.y0 - note_rect.y1,
+                note_rect.y0 - reference_rect.y1,
+                0
+            )
+            if vertical_gap > 14:
+                continue
+            center_gap = abs(
+                (reference_rect.y0 + reference_rect.y1) / 2 -
+                (note_rect.y0 + note_rect.y1) / 2
+            )
+            horizontal_gap = max(
+                reference_rect.x0 - note_rect.x1,
+                note_rect.x0 - reference_rect.x1,
+                0
+            )
+            candidates.append((vertical_gap * 100 + center_gap * 10 + horizontal_gap * 0.01,
+                               dx, dy, target_idx))
+        if not candidates:
+            return None
+        _, dx, dy, target_idx = min(candidates, key=lambda item: item[0])
+        return dx, dy, target_idx
+
+    def find_code_row_anchor(old_page, note_rect, mapped_new_idx, old_section):
+        """Move a typed side note with the nearest table-code row.
+
+        FreeText outside a frame has no reliable text in the PDF content stream.
+        In manuals it is commonly written beside a 3-digit table code, so that
+        row is a stronger anchor than another annotation elsewhere on the page.
+        """
+        candidates = []
+        max_gap = max(28, note_rect.height * .8)
+        for word in old_page.get_text("words", sort=True):
+            code_rect = fitz.Rect(word[:4])
+            codes = re.findall(r"(?<!\d)\d{3}(?!\d)", word[4])
+            if not codes or code_rect.x1 > note_rect.x0 + 20:
+                continue
+            vertical_gap = max(code_rect.y0 - note_rect.y1, note_rect.y0 - code_rect.y1, 0)
+            if vertical_gap > max_gap:
+                continue
+            center_gap = abs(
+                (code_rect.y0 + code_rect.y1) / 2 -
+                (note_rect.y0 + note_rect.y1) / 2
+            )
+            candidates.append((vertical_gap * 100 + center_gap, codes[0], code_rect))
+        if not candidates:
+            return None
+        _, code, source_rect = min(candidates, key=lambda item: item[0])
+
+        target_candidates = []
+        for offset in [0, -1, 1, -2, 2, -3, 3]:
+            target_idx = mapped_new_idx + offset
+            if not (0 <= target_idx < len(doc_new)):
+                continue
+            if not sections_match(old_section, new_sections[target_idx]):
+                continue
+            target_page = doc_new[target_idx]
+            expected_x = source_rect.x0 / max(old_page.rect.width, 1) * target_page.rect.width
+            hits = [
+                hit for hit in target_page.search_for(code)
+                if abs(hit.x0 - expected_x) < target_page.rect.width * .12
+            ]
+            if hits:
+                target_rect = min(hits, key=lambda hit: abs(hit.x0 - expected_x))
+                target_candidates.append((abs(offset), target_idx, target_rect))
+        if not target_candidates:
+            return None
+        _, target_idx, target_rect = min(target_candidates, key=lambda item: item[0])
+        dx = target_rect.x0 - source_rect.x0
+        dy = ((target_rect.y0 + target_rect.y1) -
+              (source_rect.y0 + source_rect.y1)) / 2
+        return dx, dy, target_idx
+
+    def annotation_context(page, annotation_rect, radius=4):
+        """Build a small, local text fingerprint around an annotation."""
+        words = page.get_text("words", sort=True)
+        if not words:
+            return ""
+        touched = [
+            index for index, word in enumerate(words)
+            if annotation_rect.intersects(fitz.Rect(word[:4]))
+        ]
+        if not touched:
+            center = ((annotation_rect.x0 + annotation_rect.x1) / 2,
+                      (annotation_rect.y0 + annotation_rect.y1) / 2)
+            touched = [min(
+                range(len(words)),
+                key=lambda index: (
+                    (words[index][0] + words[index][2]) / 2 - center[0]
+                ) ** 2 + ((words[index][1] + words[index][3]) / 2 - center[1]) ** 2
+            )]
+        start = max(0, min(touched) - radius)
+        end = min(len(words), max(touched) + radius + 1)
+        return "".join("".join(word[4].split()) for word in words[start:end])
+
+    def context_score(old_page, old_rect, new_page):
+        """Score a candidate page by the annotation's surrounding sentence/row."""
+        context = annotation_context(old_page, old_rect)
+        if len(context) < 6:
+            return 0
+        candidate = "".join(new_page.get_text("text").split())
+        occurrences = candidate.count(context)
+        if occurrences == 1:
+            return 1000 + len(context)
+        # Text can change slightly across versions; retain a soft signal when an
+        # exact context is unavailable, without allowing a repeated short word to
+        # dominate the decision.
+        return fuzz.partial_ratio(context, candidate)
+
+    def find_best_text_match(old_page, mapped_new_idx, old_rect, old_quadpoints, old_section,
+                             allow_neighbors):
+        """Find an annotation's text on the mapped page or its nearby spill-over pages.
+
+        A document revision can move the content of one old page across several new
+        pages.  Do not stop at the CSV's page mapping just because it contains a
+        plausible match: compare every nearby candidate and prefer the strongest
+        text match.  The CSV mapping remains the tie-breaker, so repeated labels
+        do not needlessly jump to another page.
+        """
+        source_text = old_page.get_text("text", clip=old_rect).strip().replace("\n", "")
+        source_text = "".join(c for c in source_text if c.strip() and c not in ['\uf09f', '\u2022'])
+
+        best_result, best_idx, best_score = None, None, float("-inf")
+        offsets = [0, -1, 1, -2, 2, -3, 3] if allow_neighbors else [0]
+        for offset in offsets:
+            candidate_idx = mapped_new_idx + offset
+            if not (0 <= candidate_idx < len(doc_new)):
+                continue
+            if not sections_match(old_section, new_sections[candidate_idx]):
+                continue
+
+            result = find_text_based_position(
+                old_page, doc_new[candidate_idx], old_rect,
+                rawdict_cache, words_cache, old_quadpoints
+            )
+            if not result:
+                continue
+
+            candidate_text = "".join(doc_new[candidate_idx].get_text("text").split())
+            # Local context has much more weight than the short highlighted word.
+            # It lets an old page's overflow content correctly choose the preceding
+            # or following new page when a revision changes pagination.
+            score = (
+                context_score(old_page, old_rect, doc_new[candidate_idx]) * 10 +
+                fuzz.partial_ratio(source_text, candidate_text) - abs(offset) * 1.5
+            )
+            if score > best_score:
+                best_result, best_idx, best_score = result, candidate_idx, score
+
+        return best_result, best_idx
+
+    def split_multi_item_square(old_page, old_rect, mapped_new_idx, old_section):
+        """Map a multi-row rectangular annotation into one rectangle per new page."""
+        # Do not apply this specialised flow to ordinary small boxes or thin
+        # line-like rectangles.  Those are single annotations and must retain the
+        # existing transfer behaviour.
+        if old_rect.width < 200 or old_rect.height < 100:
+            return []
+        source_items = []
+        seen = set()
+        for word in old_page.get_text("words", sort=True):
+            word_rect = fitz.Rect(word[:4])
+            if not old_rect.intersects(word_rect):
+                continue
+            # Item identifiers live in the left code column.  Numbers in the
+            # explanatory text (for example, 100-107) are not separate items.
+            if word_rect.x0 > old_rect.x0 + old_rect.width * 0.3:
+                continue
+            for code in re.findall(r"(?<!\d)\d{3}(?!\d)", word[4]):
+                key = (code, round(word_rect.y0, 1))
+                if key not in seen:
+                    source_items.append({"code": code, "rect": word_rect})
+                    seen.add(key)
+        # Narrative examples can still be inside the wide frame.  The genuine
+        # item IDs share one narrow, left-most code column.
+        if source_items:
+            code_column_x = min(item["rect"].x0 for item in source_items)
+            source_items = [
+                item for item in source_items
+                if abs(item["rect"].x0 - code_column_x) <= 12
+            ]
+        source_items.sort(key=lambda item: (item["rect"].y0, item["rect"].x0))
+        if len(source_items) < 4:
+            return []
+
+        mapped_items = []
+        for source_index, item in enumerate(source_items):
+            candidates = []
+            for offset in [0, -1, 1, -2, 2, -3, 3]:
+                candidate_idx = mapped_new_idx + offset
+                if not (0 <= candidate_idx < len(doc_new)):
+                    continue
+                if not sections_match(old_section, new_sections[candidate_idx]):
+                    continue
+                expected_x = item["rect"].x0 / max(old_page.rect.width, 1) * doc_new[candidate_idx].rect.width
+                hits = [
+                    hit for hit in doc_new[candidate_idx].search_for(item["code"])
+                    if abs(hit.x0 - expected_x) < doc_new[candidate_idx].rect.width * 0.12
+                ]
+                if len(hits) == 1:
+                    candidates.append((candidate_idx, hits[0]))
+            if candidates:
+                candidates.sort(key=lambda candidate: abs(candidate[0] - mapped_new_idx))
+                nearest_distance = abs(candidates[0][0] - mapped_new_idx)
+                # If two code-column occurrences are equally close, the item is
+                # ambiguous and the complete-box validation below will reject it.
+                if (len(candidates) == 1 or
+                        abs(candidates[1][0] - mapped_new_idx) > nearest_distance):
+                    target_idx, target_rect = candidates[0]
+                else:
+                    continue
+                mapped_items.append({
+                    **item, "source_index": source_index,
+                    "target_idx": target_idx, "target_rect": target_rect
+                })
+
+        # A wide frame can also contain numbers from explanatory text.  Keep only
+        # the consecutive code-column rows that can actually be located nearby in
+        # the new document.  This is more reliable than abandoning the whole
+        # split because a non-item number has no match.
+        if len(mapped_items) < 4:
+            return []
+
+        target_sequence = [item["target_idx"] for item in mapped_items]
+        # A real pagination split progresses monotonically through the new PDF.
+        # Alternating target pages means a repeated code was ambiguous, so it is
+        # safer to keep the original single-box behaviour than draw overlaps.
+        if any(current < previous for previous, current in zip(target_sequence, target_sequence[1:])):
+            return []
+
+        groups = []
+        for item in mapped_items:
+            if not groups or groups[-1][0]["target_idx"] != item["target_idx"]:
+                groups.append([item])
+            else:
+                groups[-1].append(item)
+
+        # Split only when this is confidently a cross-page multi-item box.  This
+        # prevents extra boxes and apparent bold borders on ordinary annotations.
+        if len(groups) < 2 or len(groups) > 3 or any(len(group) < 2 for group in groups):
+            return []
+
+        rectangles = []
+        for group_index, group in enumerate(groups):
+            target_idx = group[0]["target_idx"]
+            target_page = doc_new[target_idx]
+            source_first = group[0]
+            source_last = group[-1]
+            first_index = source_first["source_index"]
+            last_index = source_last["source_index"]
+
+            # Preserve the original horizontal span, adjusted by the code-column
+            # shift.  Vertically, expand to the next item boundary so each new
+            # rectangle contains the complete table rows on that page.
+            x_shift = statistics.median(
+                item["target_rect"].x0 - item["rect"].x0 for item in group
+            )
+            x0 = max(0, old_rect.x0 + x_shift)
+            x1 = min(target_page.rect.width, old_rect.x1 + x_shift)
+            top_pad = (source_first["rect"].y0 - old_rect.y0 if first_index == 0
+                       else min(12, (source_first["rect"].y0 - source_items[first_index - 1]["rect"].y1) / 2))
+            y0 = max(0, min(item["target_rect"].y0 for item in group) - top_pad)
+
+            next_group_item = (groups[group_index + 1][0]
+                               if group_index + 1 < len(groups) else None)
+            # Do not extend a split frame to the page bottom: after a page break
+            # that produced a visually oversized box.  Use one half-row below
+            # the final code, capped by the source frame's original bottom pad.
+            row_gaps = [
+                source_items[index + 1]["rect"].y0 - source_items[index]["rect"].y1
+                for index in range(first_index, min(last_index + 1, len(source_items) - 1))
+                if source_items[index + 1]["rect"].y0 > source_items[index]["rect"].y1
+            ]
+            half_row = statistics.median(row_gaps) / 2 if row_gaps else 18
+            bottom_pad = min(max(10, half_row), max(10, old_rect.y1 - source_last["rect"].y1))
+            y1 = min(target_page.rect.height, max(item["target_rect"].y1 for item in group) + bottom_pad)
+            rectangles.append((target_idx, fitz.Rect(x0, y0, x1, y1)))
+        return rectangles
+
+    def split_code_column_line(old_page, old_rect, mapped_new_idx, old_section):
+        """Split a vertical line by the code rows it marks across page breaks."""
+        if old_rect.height < 60 or old_rect.width > 20:
+            return []
+        line_x = (old_rect.x0 + old_rect.x1) / 2
+        source_items = []
+        for word in old_page.get_text("words", sort=True):
+            word_rect = fitz.Rect(word[:4])
+            if word_rect.y1 < old_rect.y0 - 8 or word_rect.y0 > old_rect.y1 + 8:
+                continue
+            # The line is drawn through / immediately beside the three-digit
+            # code, so ignore narrative text further away on the same row.
+            if not (word_rect.x0 - 12 <= line_x <= word_rect.x1 + 12):
+                continue
+            for code in re.findall(r"(?<!\d)\d{3}(?!\d)", word[4]):
+                source_items.append({"code": code, "rect": word_rect})
+        if source_items:
+            code_column_x = min(item["rect"].x0 for item in source_items)
+            source_items = [
+                item for item in source_items
+                if abs(item["rect"].x0 - code_column_x) <= 12
+            ]
+            # A vertical separator normally marks one code family (for example
+            # 500-532).  Do not let the next 6xx section lengthen that same
+            # separator merely because it happens to be in the nearby column.
+            prefix_counts = {}
+            for item in source_items:
+                prefix_counts[item["code"][0]] = prefix_counts.get(item["code"][0], 0) + 1
+            dominant_prefix, dominant_count = max(prefix_counts.items(), key=lambda item: item[1])
+            if dominant_count >= 3:
+                source_items = [
+                    item for item in source_items
+                    if item["code"].startswith(dominant_prefix)
+                ]
+        if len(source_items) < 3:
+            return []
+
+        mapped_items = []
+        for item in source_items:
+            candidates = []
+            for offset in [0, -1, 1, -2, 2, -3, 3]:
+                target_idx = mapped_new_idx + offset
+                if not (0 <= target_idx < len(doc_new)):
+                    continue
+                if not sections_match(old_section, new_sections[target_idx]):
+                    continue
+                expected_x = (item["rect"].x0 / max(old_page.rect.width, 1) *
+                              doc_new[target_idx].rect.width)
+                hits = [
+                    hit for hit in doc_new[target_idx].search_for(item["code"])
+                    if abs(hit.x0 - expected_x) < doc_new[target_idx].rect.width * .12
+                ]
+                if len(hits) == 1:
+                    candidates.append((target_idx, hits[0]))
+            if not candidates:
+                continue
+            candidates.sort(key=lambda candidate: abs(candidate[0] - mapped_new_idx))
+            target_idx, target_rect = candidates[0]
+            mapped_items.append({**item, "target_idx": target_idx, "target_rect": target_rect})
+        if len(mapped_items) < 3:
+            return []
+
+        groups = []
+        for item in mapped_items:
+            if not groups or groups[-1][0]["target_idx"] != item["target_idx"]:
+                groups.append([item])
+            else:
+                groups[-1].append(item)
+        # A line may stay on one page after reflow.  It still benefits from being
+        # rebuilt from its marked code rows instead of receiving a page-level
+        # translation.  Split only when the rows genuinely land on more pages.
+        if len(groups) > 3 or any(len(group) < 2 for group in groups):
+            return []
+
+        lines = []
+        for group in groups:
+            target_idx = group[0]["target_idx"]
+            target_page = doc_new[target_idx]
+            # Preserve the line's position inside the code (for example, to the
+            # right of the leading "5"), not merely its absolute page x value.
+            x_offsets = [line_x - item["rect"].x0 for item in group]
+            x = statistics.median(item["target_rect"].x0 for item in group) + statistics.median(x_offsets)
+            y0 = min(item["target_rect"].y0 for item in group) - 4
+            y1 = max(item["target_rect"].y1 for item in group) + 4
+            lines.append((target_idx, fitz.Point(x, max(0, y0)),
+                          fitz.Point(x, min(target_page.rect.height, y1))))
+        return lines
+
+    def align_horizontal_line(old_page, old_rect, mapped_new_idx, old_section):
+        """Place a horizontal divider from the text rows immediately around it."""
+        if old_rect.width < 120 or old_rect.height > 20:
+            return None
+        line_y = (old_rect.y0 + old_rect.y1) / 2
+        anchors = []
+        for word in old_page.get_text("words", sort=True):
+            word_rect = fitz.Rect(word[:4])
+            if abs((word_rect.y0 + word_rect.y1) / 2 - line_y) > 26:
+                continue
+            text = "".join(word[4].split())
+            if len(text) < 2 or len(text) > 20:
+                continue
+            anchors.append((text, word_rect))
+        if not anchors:
+            return None
+
+        page_votes = {}
+        page_offsets = {}
+        for offset in [0, -1, 1, -2, 2, -3, 3]:
+            target_idx = mapped_new_idx + offset
+            if not (0 <= target_idx < len(doc_new)):
+                continue
+            if not sections_match(old_section, new_sections[target_idx]):
+                continue
+            target_page = doc_new[target_idx]
+            offsets = []
+            for text, source_rect in anchors:
+                hits = target_page.search_for(text)
+                if not hits:
+                    continue
+                # A divider usually spans a whole table; choose the occurrence
+                # preserving the anchor's horizontal column.
+                expected_x = source_rect.x0 / max(old_page.rect.width, 1) * target_page.rect.width
+                hit = min(hits, key=lambda candidate: abs(candidate.x0 - expected_x))
+                if abs(hit.x0 - expected_x) > target_page.rect.width * .18:
+                    continue
+                offsets.append((hit.y0 + hit.y1 - source_rect.y0 - source_rect.y1) / 2)
+            if offsets:
+                page_votes[target_idx] = len(offsets)
+                page_offsets[target_idx] = offsets
+        if not page_votes:
+            return None
+
+        target_idx = max(
+            page_votes,
+            key=lambda index: (page_votes[index], -abs(index - mapped_new_idx))
+        )
+        # One matched label is too weak for a broad divider and risks snapping it
+        # to an unrelated repeated phrase.
+        if page_votes[target_idx] < 2:
+            return None
+        target_page = doc_new[target_idx]
+        dy = statistics.median(page_offsets[target_idx])
+        y = min(max(0, line_y + dy), target_page.rect.height)
+        return (
+            target_idx,
+            fitz.Point(old_rect.x0 / old_page.rect.width * target_page.rect.width, y),
+            fitz.Point(old_rect.x1 / old_page.rect.width * target_page.rect.width, y)
+        )
 
     for old_idx, new_idx in mapping.items():
         if old_idx >= len(doc_old) or new_idx >= len(doc_new): continue
@@ -400,6 +1102,35 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
 
         annots = reader_old.pages[old_idx].Annots
         if not annots: continue
+        # CSV provides the starting page; the annotation's local context chooses
+        # among that page and nearby overflow pages.
+        allow_neighbors = True
+
+        # 第一階段：預掃描本頁的所有文字型筆記，搜集投票錨點
+        voting_anchors = [] # 儲存格式：(matched_idx, y_center, weight)
+        old_h = p_old_f.rect.height
+        for annot in annots:
+            if not annot.get('/Rect'): continue
+            subtype = annot.get('/Subtype')
+            if subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly', '/Square', '/Circle', '/Redact', '/Text']:
+                r = [float(x) for x in annot['/Rect']]
+                old_rect_f = fitz.Rect(r[0], old_h - r[3], r[2], old_h - r[1])
+                y_center = (old_rect_f.y0 + old_rect_f.y1) / 2
+
+                # 取得文字長度，忽略短字以防噪訊影響投票
+                annot_text = p_old_f.get_text("text", clip=old_rect_f).strip().replace('\n', '')
+                annot_text_clean = "".join([c for c in annot_text if c.strip() and c not in ['\uf09f', '\u2022']])
+                weight = len(annot_text_clean)
+                if weight < 6:
+                    continue # 忽略小於 6 字的短標記參與投票
+                
+                old_quadpoints = annot.get(PN('QuadPoints'))
+                text_result, matched_idx = find_best_text_match(
+                    p_old_f, new_idx, old_rect_f, old_quadpoints, old_sections[old_idx],
+                    allow_neighbors
+                )
+                if text_result:
+                    voting_anchors.append((matched_idx, y_center, weight))
         if not p_new_p.Annots: p_new_p.Annots = pdfrw.PdfArray()
         if old_idx not in processed_offsets_map: processed_offsets_map[old_idx] = []
         for annot in annots:
@@ -408,10 +1139,96 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             r = [float(x) for x in annot['/Rect']]
             old_h = p_old_f.rect.height
             old_rect_f = fitz.Rect(r[0], old_h - r[3], r[2], old_h - r[1])
-            target_new_idx = new_idx
+            y_center = (old_rect_f.y0 + old_rect_f.y1) / 2
+
+            if subtype == '/Square':
+                split_rectangles = split_multi_item_square(
+                    p_old_f, old_rect_f, new_idx, old_sections[old_idx]
+                )
+                if split_rectangles:
+                    for target_idx, target_rect in split_rectangles:
+                        target_page = reader_new.pages[target_idx]
+                        # pdfrw annotation objects cannot be copied with
+                        # copy.copy() (their __setstate__ is None).
+                        split_annot = pdfrw.PdfDict(annot)
+                        page_height = doc_new[target_idx].rect.height
+                        split_annot.Rect = pdfrw.PdfArray([
+                            pdfrw.PdfObject(f"{value:.4f}") for value in [
+                                target_rect.x0, page_height - target_rect.y1,
+                                target_rect.x1, page_height - target_rect.y0
+                            ]
+                        ])
+                        if split_annot.get('/P'):
+                            split_annot.P = target_page
+                        if not target_page.Annots:
+                            target_page.Annots = pdfrw.PdfArray()
+                        target_page.Annots.append(split_annot)
+                    continue
+
+            if subtype == '/Line':
+                split_lines = split_code_column_line(
+                    p_old_f, old_rect_f, new_idx, old_sections[old_idx]
+                )
+                if not split_lines:
+                    aligned_line = align_horizontal_line(
+                        p_old_f, old_rect_f, new_idx, old_sections[old_idx]
+                    )
+                    split_lines = [aligned_line] if aligned_line else []
+                if split_lines:
+                    for target_idx, start, end in split_lines:
+                        target_page = reader_new.pages[target_idx]
+                        split_annot = pdfrw.PdfDict(annot)
+                        page_height = doc_new[target_idx].rect.height
+                        # A line's old appearance stream contains drawing
+                        # commands at its former coordinates.  Some viewers keep
+                        # showing that cached stream until the annotation is
+                        # clicked.  Remove it so the moved /L is rendered on the
+                        # first open.
+                        for key in ['/AP', '/RD', '/BE']:
+                            if split_annot.get(key):
+                                del split_annot[key]
+                        split_annot.L = pdfrw.PdfArray([
+                            pdfrw.PdfObject(f"{start.x:.4f}"),
+                            pdfrw.PdfObject(f"{page_height - start.y:.4f}"),
+                            pdfrw.PdfObject(f"{end.x:.4f}"),
+                            pdfrw.PdfObject(f"{page_height - end.y:.4f}")
+                        ])
+                        # Keep a non-zero rectangle around a vertical line.  A
+                        # zero-width /Rect is legal in practice but commonly
+                        # gets culled by PDF viewers until they redraw it.
+                        rect_pad = max(1.5, abs(end.x - start.x) / 2 + 0.5)
+                        split_annot.Rect = pdfrw.PdfArray([
+                            pdfrw.PdfObject(f"{min(start.x, end.x) - rect_pad:.4f}"),
+                            pdfrw.PdfObject(f"{page_height - max(start.y, end.y) - rect_pad:.4f}"),
+                            pdfrw.PdfObject(f"{max(start.x, end.x) + rect_pad:.4f}"),
+                            pdfrw.PdfObject(f"{page_height - min(start.y, end.y) + rect_pad:.4f}")
+                        ])
+                        if split_annot.get('/P'):
+                            split_annot.P = target_page
+                        if not target_page.Annots:
+                            target_page.Annots = pdfrw.PdfArray()
+                        target_page.Annots.append(split_annot)
+                    continue
+
+            # 使用距離權重局部共識決定當前標記的基準對應頁面
+            local_new_idx = new_idx
+            if allow_neighbors and voting_anchors:
+                page_scores = {}
+                for matched_idx, v_y, weight in voting_anchors:
+                    dist = abs(y_center - v_y)
+                    # 權重與距離成反比，加入 50.0 的平滑值防止除以零且平衡近鄰影響
+                    score = weight / (dist + 50.0)
+                    page_scores[matched_idx] = page_scores.get(matched_idx, 0.0) + score
+                local_new_idx = max(page_scores, key=page_scores.get)
+
+            p_new_f = doc_new[local_new_idx]
+            p_new_p = reader_new.pages[local_new_idx]
+            if not p_new_p.Annots: p_new_p.Annots = pdfrw.PdfArray()
+
+            target_new_idx = local_new_idx
             dx, dy = 0, 0
             text_result = None
-            overlaps_freetext = False
+            overlaps_freetext = False            
             freetext_idx = None
             if subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly', '/Square', '/Circle', '/Redact', '/Text']:
                 for oidx, other_annot in enumerate(annots):
@@ -442,10 +1259,10 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 
                 if not found_ft:
                     ft_dx, ft_dy, ft_target_idx, ft_status, ft_match_count = find_precise_offset(
-                        p_old_f, p_new_f, ft_rect_f, processed_offsets_map[old_idx], words_cache
+                        p_old_f, p_new_f, ft_rect_f, processed_offsets_map[old_idx], spans_cache
                     )
                     if ft_target_idx is None:
-                        ft_target_idx = new_idx
+                        ft_target_idx = local_new_idx
                     processed_offsets_map[old_idx].append((ft_rect_f, ft_dx, ft_dy, ft_target_idx, True))
 
             # 文字內容精準對位 (適用於文字標註、外框等)
@@ -455,18 +1272,13 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 target_new_idx = ft_target_idx
             else:
                 if not overlaps_freetext and subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly', '/Square', '/Circle', '/Redact']:
-                    text_result = find_text_based_position(p_old_f, p_new_f, old_rect_f, rawdict_cache, words_cache)
-                    if not text_result:
-                        for offset in [1, -1, 2]:
-                            cand_idx = new_idx + offset
-                            if 0 <= cand_idx < len(doc_new):
-                                if not sections_match(old_sections[old_idx], new_sections[cand_idx]):
-                                    continue
-                                res = find_text_based_position(p_old_f, doc_new[cand_idx], old_rect_f, rawdict_cache, words_cache)
-                                if res:
-                                    text_result = res
-                                    target_new_idx = cand_idx
-                                    break
+                    old_quadpoints = annot.get(PN('QuadPoints'))
+                    text_result, matched_idx = find_best_text_match(
+                        p_old_f, local_new_idx, old_rect_f, old_quadpoints, old_sections[old_idx],
+                        allow_neighbors
+                    )
+                    if text_result:
+                        target_new_idx = matched_idx
                     if text_result:
                         new_quads, new_rect, pdf_rect_old = text_result
                         left_pad = r[0] - pdf_rect_old[0]
@@ -500,44 +1312,105 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 # 無文字對位結果時，採用錨點比對或繼承群組位移
                 status = "未群組"
                 if not text_result:
-                    text_dx, text_dy, group_target_idx, status, match_count = find_precise_offset(p_old_f, p_new_f, old_rect_f, processed_offsets_map[old_idx], words_cache)                  
-                    if status == "群組" and group_target_idx is not None:
-                        target_new_idx = group_target_idx
-                        dx = text_dx
-                        dy = text_dy
-                    else:
-                        best_match_count = -1
-                        best_dx, best_dy = 0, 0
-                        best_target_idx = new_idx
-                        for offset in [0, 1, -1, 2]:
-                            cand_idx = new_idx + offset
-                            if 0 <= cand_idx < len(doc_new):
+                    if subtype == '/FreeText':
+                        code_row = find_code_row_anchor(
+                            p_old_f, old_rect_f, new_idx,
+                            old_sections[old_idx]
+                        )
+                        same_row = find_same_row_reference(
+                            old_rect_f, processed_offsets_map[old_idx]
+                        )
+                        if code_row:
+                            best_dx, best_dy, best_target_idx = code_row
+                            best_status = "code-row-anchor"
+                        elif same_row:
+                            # 同列螢光筆已透過文字重繪成功，直接共用它的位移。
+                            # 這能保留「文字寫在被標示內容右側」的語意。
+                            best_dx, best_dy, best_target_idx = same_row
+                            best_status = "同列錨點"
+                        else:
+                            # 沒有同列標記時，文字筆記才以自身周邊多個文字
+                            # 錨點定位，並在必要時檢查相鄰頁。
+                            best_match_count = -1
+                            best_dx, best_dy = 0, 0
+                            best_target_idx = local_new_idx
+                            best_status = "兜底零位移"
+                            offsets = [0, -1, 1, -2, 2] if allow_neighbors else [0]
+                            for offset in offsets:
+                                cand_idx = local_new_idx + offset
+                                if not (0 <= cand_idx < len(doc_new)):
+                                    continue
                                 if not sections_match(old_sections[old_idx], new_sections[cand_idx]):
                                     continue
-                                cand_p_new = doc_new[cand_idx]
-                                cand_dx, cand_dy, _, cand_status, cand_match_count = find_precise_offset(p_old_f, cand_p_new, old_rect_f, [], words_cache)
-                                if cand_status in ["精準AI", "弱AI"]:
-                                    if cand_match_count > best_match_count:
-                                        best_match_count = cand_match_count
-                                        best_dx = cand_dx
-                                        best_dy = cand_dy
-                                        best_target_idx = cand_idx
-                        
-                        if best_match_count == -1:
-                            target_new_idx = new_idx
-                            cand_p_new = doc_new[target_new_idx]
-                            dx = (cand_p_new.rect.x0 - p_old_f.rect.x0)
-                            dy = (cand_p_new.rect.y0 - p_old_f.rect.y0)
+                                cand_dx, cand_dy, _, cand_status, cand_match_count = find_precise_offset(
+                                    p_old_f, doc_new[cand_idx], old_rect_f, [], spans_cache,
+                                    allow_group=False, prefer_context=True
+                                )
+                                # 先以同一組上下文錨點數量取勝；相同時保留距離較近的頁面。
+                                if (cand_match_count > best_match_count or
+                                    (cand_match_count == best_match_count and
+                                     abs(offset) < abs(best_target_idx - local_new_idx))):
+                                    best_match_count = cand_match_count
+                                    best_dx, best_dy = cand_dx, cand_dy
+                                    best_target_idx = cand_idx
+                                    best_status = cand_status
+
+                        target_new_idx = best_target_idx
+                        cand_p_new = doc_new[target_new_idx]
+                        dx = best_dx + (cand_p_new.rect.x0 - p_old_f.rect.x0)
+                        dy = best_dy + (cand_p_new.rect.y0 - p_old_f.rect.y0)
+                        status = best_status
+                    # 對於螢光筆、底線等標記，若無法匹配到文字，直接留在原本的物理位置 (原地)，不要隨錨點或群組位移偏移
+                    elif subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly']:
+                        target_new_idx = local_new_idx
+                        cand_p_new = doc_new[target_new_idx]
+                        dx = (cand_p_new.rect.x0 - p_old_f.rect.x0)
+                        dy = (cand_p_new.rect.y0 - p_old_f.rect.y0)
+                    else:
+                        text_dx, text_dy, group_target_idx, status, match_count = find_precise_offset(p_old_f, p_new_f, old_rect_f, processed_offsets_map[old_idx], spans_cache)                  
+                        if status == "群組" and group_target_idx is not None:
+                            target_new_idx = group_target_idx
+                            dx = text_dx
+                            dy = text_dy
                         else:
-                            target_new_idx = best_target_idx
-                            cand_p_new = doc_new[target_new_idx]
-                            dx = best_dx + (cand_p_new.rect.x0 - p_old_f.rect.x0)
-                            dy = best_dy + (cand_p_new.rect.y0 - p_old_f.rect.y0)
+                            best_match_count = -1
+                            best_dx, best_dy = 0, 0
+                            best_target_idx = local_new_idx
+                            for offset in [0, 1, -1, 2]:
+                                cand_idx = local_new_idx + offset
+                                if 0 <= cand_idx < len(doc_new):
+                                    if not sections_match(old_sections[old_idx], new_sections[cand_idx]):
+                                        continue
+                                    cand_p_new = doc_new[cand_idx]
+                                    cand_dx, cand_dy, _, cand_status, cand_match_count = find_precise_offset(p_old_f, cand_p_new, old_rect_f, [], spans_cache)
+                                    if cand_status in ["精準AI", "弱AI"]:
+                                        if cand_match_count > best_match_count:
+                                            best_match_count = cand_match_count
+                                            best_dx = cand_dx
+                                            best_dy = cand_dy
+                                            best_target_idx = cand_idx
+                            
+                            # 弱錨點防誤跳門檻：只有在跨頁跳轉時，才要求至少要有 3 個一致的錨點以防誤跳。同頁內比對時，哪怕只有 1-2 個錨點一致也允許套用微調位移
+                            if best_target_idx != local_new_idx and best_match_count < 3:
+                                target_new_idx = local_new_idx
+                                cand_p_new = doc_new[target_new_idx]
+                                dx = (cand_p_new.rect.x0 - p_old_f.rect.x0)
+                                dy = (cand_p_new.rect.y0 - p_old_f.rect.y0)
+                            else:
+                                target_new_idx = best_target_idx
+                                cand_p_new = doc_new[target_new_idx]
+                                dx = best_dx + (cand_p_new.rect.x0 - p_old_f.rect.x0)
+                                dy = best_dy + (cand_p_new.rect.y0 - p_old_f.rect.y0)
             is_direct = (text_result is not None) or (status != "群組")
             processed_offsets_map[old_idx].append((old_rect_f, dx, dy, target_new_idx, is_direct))
 
-            # 註解屬性清理與平移寫入：保留 FreeText 的 /AP 與 /DA 屬性以完整顯示中文字型，其餘定位位移與螢光筆等不受影響
-            pass
+            # 註解屬性清理與平移寫入：
+            # 1. 對於 FreeText，保留 /AP 與 /DA 屬性以完整顯示中文字型。
+            # 2. 對於螢光筆與底線等，刪除舊的 /AP 外觀流，強迫 PDF 閱讀器根據新的 /QuadPoints 重新生成正確的畫筆外觀，避免劃一大片。
+            if subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly', '/Line']:
+                for key in ['/AP', '/RD', '/IT']:
+                    if annot.get(key):
+                        del annot[key]
 
             new_rect = [r[0] + dx, r[1] - dy, r[2] + dx, r[3] - dy]
             if text_result:
