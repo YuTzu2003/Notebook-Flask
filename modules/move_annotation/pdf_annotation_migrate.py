@@ -1361,6 +1361,26 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 )
                 if text_result:
                     voting_anchors.append((matched_idx, y_center, weight))
+
+        # A CSV match can be one page off around a revision's page break.  Let
+        # several independently matched annotations correct that *page-level*
+        # choice, rather than allowing each annotation to jump separately.  A
+        # single match is deliberately not enough to override the CSV.
+        consensus_new_idx = new_idx
+        if voting_anchors:
+            vote_weight = {}
+            vote_count = {}
+            for matched_idx, _, weight in voting_anchors:
+                vote_weight[matched_idx] = vote_weight.get(matched_idx, 0) + weight
+                vote_count[matched_idx] = vote_count.get(matched_idx, 0) + 1
+            best_vote_idx = max(
+                vote_weight,
+                key=lambda idx: (vote_weight[idx], vote_count[idx], -abs(idx - new_idx))
+            )
+            mapped_weight = vote_weight.get(new_idx, 0)
+            if (best_vote_idx != new_idx and vote_count[best_vote_idx] >= 2 and
+                    vote_weight[best_vote_idx] > mapped_weight * 1.15):
+                consensus_new_idx = best_vote_idx
         if not p_new_p.Annots: p_new_p.Annots = pdfrw.PdfArray()
         if old_idx not in processed_offsets_map: processed_offsets_map[old_idx] = []
         for annot in annots:
@@ -1451,7 +1471,7 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                     continue
 
             # 使用距離權重局部共識決定當前標記的基準對應頁面
-            local_new_idx = new_idx
+            local_new_idx = consensus_new_idx
             # Do not preemptively switch pages from nearby annotations.  Each
             # annotation first checks its CSV-mapped page, then falls back to a
             # neighbour only if its own text is absent there.
@@ -1532,10 +1552,14 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                     # maps to this annotation's CSV target page.
                     if (subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly'] and
                             target_new_idx != new_idx):
-                        same_row = find_same_row_reference(
-                            old_rect_f, processed_offsets_map[old_idx]
+                        same_page_neighbor = any(
+                            target_idx == new_idx and
+                            max(reference_rect.y0 - old_rect_f.y1,
+                                old_rect_f.y0 - reference_rect.y1, 0) <= 22
+                            for reference_rect, _, _, target_idx, _
+                            in processed_offsets_map[old_idx]
                         )
-                        if same_row and same_row[2] == new_idx:
+                        if same_page_neighbor:
                             if old_quadpoints:
                                 annot[PN('QuadPoints')] = pdfrw.PdfArray([
                                     pdfrw.PdfObject(f"{float(value):.4f}")
@@ -1549,7 +1573,7 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             if not text_result:
                 if subtype == '/FreeText':
                     code_row = find_code_row_anchor(
-                        p_old_f, old_rect_f, new_idx,
+                        p_old_f, old_rect_f, local_new_idx,
                         old_sections[old_idx]
                     )
                     same_row = find_same_row_reference(
@@ -1610,10 +1634,10 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                     # jump of roughly a paragraph or more, it is almost always
                     # following a repeated heading / code rather than the note's
                     # actual row.  Retain the mapped-page position in that case.
-                    if (best_target_idx != new_idx or abs(best_dy) > 100 or
+                    if (best_target_idx != local_new_idx or abs(best_dy) > 100 or
                             abs(best_dx) > 45):
                         best_dx, best_dy = 0, 0
-                        best_target_idx = new_idx
+                        best_target_idx = local_new_idx
                         best_status = "conservative-keep-page-position"
 
                     target_new_idx = best_target_idx
