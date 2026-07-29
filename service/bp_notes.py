@@ -151,8 +151,14 @@ def notes_action():
         action = request.args.get("action")
         if action == "download_pdf":
             filename = request.args.get("filename")
-            sql = """SELECT SourceFileName, TransferID FROM Hospital.dbo.NoteTransferHistory WHERE ResultName = ?"""
-            result = execute_query(sql, (filename,))
+            transfer_id = request.args.get("transfer_id")
+            user_id = session.get("ID")
+            # Result filenames are reused for every transfer of the same PDF.
+            # Use the row's transfer ID from the download link so a new result
+            # cannot accidentally download an older file with the same name.
+            sql = """SELECT SourceFileName, TransferID FROM Hospital.dbo.NoteTransferHistory
+                     WHERE ResultName = ? AND TransferID = ? AND UserID = ?"""
+            result = execute_query(sql, (filename, transfer_id, user_id))
 
             if result:
                 source_file_name = result[0]['SourceFileName']
