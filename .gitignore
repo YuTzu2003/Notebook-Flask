@@ -17,6 +17,7 @@ wheels/
 *.json
 *.env
 *.xlsx
+tmp/
 
 AGENTS.md
 CLAUDE.md
