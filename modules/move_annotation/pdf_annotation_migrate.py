@@ -1629,6 +1629,21 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                             best_target_idx = local_new_idx
                             best_status = "conservative-no-shift"
 
+                    # Long typed notes cover enough surrounding PDF content to
+                    # form a stronger local anchor than another annotation on
+                    # the same row.  Prefer that anchor only when several
+                    # nearby document words agree on a modest displacement.
+                    if old_rect_f.height >= 35:
+                        local_dx, local_dy, _, _, local_match_count = find_precise_offset(
+                            p_old_f, doc_new[local_new_idx], old_rect_f, [],
+                            spans_cache, allow_group=False, prefer_context=True
+                        )
+                        if (local_match_count >= 4 and abs(local_dx) <= 45 and
+                                abs(local_dy) <= 100):
+                            best_dx, best_dy = local_dx, local_dy
+                            best_target_idx = local_new_idx
+                            best_status = "long-note-local-anchor"
+
                     # A FreeText note has no source text that can prove a large
                     # displacement.  If its nearby-word heuristic proposes a
                     # jump of roughly a paragraph or more, it is almost always
