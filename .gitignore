@@ -17,3 +17,7 @@ wheels/
 *.json
 *.env
 *.xlsx
+
+AGENTS.md
+CLAUDE.md
+GEMINI.md
