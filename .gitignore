@@ -18,3 +18,7 @@ wheels/
 *.env
 *.xlsx
 tmp/
+
+AGENTS.md
+CLAUDE.md
+GEMINI.md
