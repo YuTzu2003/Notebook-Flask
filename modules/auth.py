@@ -2,12 +2,26 @@ import os
 from flask import Blueprint, jsonify, render_template, request, redirect, url_for, session, flash
 from functools import wraps
 import json
+import secrets
+import threading
 from datetime import datetime
 # from werkzeug.security import check_password_hash
 from modules.db import get_conn
 
 LOG_FILE_PATH = os.path.join("tasks", "login_history.json")
+LOGIN_LOG_LOCK = threading.Lock()
 
+
+def synchronized(lock):
+    def decorate(func):
+        @wraps(func)
+        def locked(*args, **kwargs):
+            with lock:
+                return func(*args, **kwargs)
+        return locked
+    return decorate
+
+@synchronized(LOGIN_LOG_LOCK)
 def log_login_attempt(emp_id, status, message, ip_address):
     os.makedirs(os.path.dirname(LOG_FILE_PATH), exist_ok=True)
     
@@ -66,7 +80,7 @@ def login():
         ip_address = request.remote_addr
 
         # if user and check_password_hash(user.Password, password):
-        if user and user.Password == password:
+        if user and secrets.compare_digest(str(user.Password), password):
             session["ID"] = user.ID        
             session["UserID"] = user.UserID 
             session["Name"] = user.Name     
@@ -116,6 +130,8 @@ def admin_users():
     cursor = conn.cursor()
     sort_val = request.args.get('sort_by', 'Last_login')# 預設
     search_name = request.args.get('search_name', '').strip()
+    if sort_val not in {'Last_login', 'Name', 'UserID', 'Position', 'Location'}:
+        sort_val = 'Last_login'
     filter_pos = request.args.get('filter_pos', '')
     
     order = 'DESC' if sort_val == 'Last_login' else 'ASC'

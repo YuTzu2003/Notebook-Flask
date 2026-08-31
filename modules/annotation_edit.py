@@ -111,12 +111,13 @@ def upload_pdf():
 @notes_bp.route("/get_pdf_content/<doc_id>")
 @login_required
 def get_pdf_content(doc_id):
-    filename = doc_id if doc_id.lower().endswith('.pdf') else f"{doc_id}.pdf"
-    pdf_path = f"{UPLOAD_Folder}/{filename}"
-    
-    if not os.path.isfile(pdf_path):
+    rows = execute_query(
+        "SELECT StorageName FROM Documents WHERE DocID = ? AND User_ID = ?",
+        (doc_id, session.get("ID")),
+    )
+    if not rows:
         return "PDF not found", 404
-
+    pdf_path = os.path.join(UPLOAD_Folder, rows[0]["StorageName"])
     return send_file(pdf_path, mimetype='application/pdf')
 
 @notes_bp.route("/add_blank_page", methods=["POST"])
@@ -172,6 +173,12 @@ def delete_page():
 def save():
     data = request.json
     doc_id, original_name, all_mods = data.get("doc_id"), data.get("original_name", "note.pdf"), data["all_modifications"]
+    rows = execute_query(
+        "SELECT StorageName FROM Documents WHERE DocID = ? AND User_ID = ?",
+        (doc_id, session.get("ID")),
+    )
+    if not rows:
+        return jsonify({"success": False, "message": "PDF not found"}), 404
     with open(f"{NOTE_Folder}/{doc_id}.json", "w", encoding="utf-8") as jf:
         json.dump(all_mods, jf, ensure_ascii=False, indent=2)
     
@@ -260,11 +267,18 @@ def save():
 
 
 @notes_bp.route("/analyze_toc", methods=["POST"])
+@login_required
 def analyze_toc():
     data = request.json
     toc_str, offset_input = str(data.get("toc_pages", "")).lower(), str(data.get("offset", "")).lower()
-    
-    with pdfplumber.open(os.path.join(UPLOAD_Folder, data.get("pdf_name"))) as pdf:
+    rows = execute_query(
+        "SELECT StorageName FROM Documents WHERE StorageName = ? AND User_ID = ?",
+        (data.get("pdf_name"), session.get("ID")),
+    )
+    if not rows:
+        return jsonify({"success": False, "message": "PDF not found"}), 404
+
+    with pdfplumber.open(os.path.join(UPLOAD_Folder, rows[0]["StorageName"])) as pdf:
         # 1. 決定目錄頁碼 (合併自動偵測邏輯)
         if toc_str == "auto":
             toc_pages = [i + 1 for i in range(min(15, len(pdf.pages))) if len(re.findall(r'^(.*?)\s+(\d+)$', pdf.pages[i].extract_text() or "", re.MULTILINE)) > 3]

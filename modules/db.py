@@ -1,67 +1,55 @@
+import logging
 import os
-import pyodbc
 from dotenv import load_dotenv
-from dbutils.pooled_db import PooledDB
+from sqlalchemy import create_engine
 
 load_dotenv()
+_engine = None
 
-class DBConnectWrapper:
-    threadsafety = 1
-    dbapi = pyodbc 
-    def __init__(self, conn_str):
-        self.conn_str = conn_str
-    def connect(self, *args, **kwargs):
-        return pyodbc.connect(self.conn_str, *args, **kwargs)
-_pool = None
+def _database_url():
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL environment variable is not set")
+    return database_url
+
+def get_engine():
+    global _engine
+    if _engine is None:
+        _engine = create_engine(
+            _database_url(),
+            pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
+            max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "20")),
+            pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "30")),
+            pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "1800")),
+            pool_pre_ping=True,
+        )
+    return _engine
 
 def get_conn():
-    global _pool
-    if _pool is None:
-        driver = os.environ.get("DB_DRIVER")
-        server = os.environ.get("DB_SERVER")
-        port = os.environ.get("DB_PORT")
-        database = os.environ.get("DB_NAME")
-        uid = os.environ.get("DB_USER")
-        pwd = os.environ.get("DB_PASS")
-        conn_str = f"DRIVER={driver};SERVER={server};PORT={port};DATABASE={database};UID={uid};PWD={pwd};TrustServerCertificate=yes;"
-        _pool = PooledDB(
-            creator=DBConnectWrapper(conn_str),
-            maxconnections=30,
-            mincached=2,
-            maxcached=10,
-            blocking=True,
-            failures=(pyodbc.OperationalError, pyodbc.InternalError, pyodbc.ProgrammingError, pyodbc.DatabaseError)
-        )
-    return _pool.connection()
-
+    return get_engine().raw_connection()
 
 def execute_query(sql, params=None):
     conn = None
     try:
         conn = get_conn()
         cursor = conn.cursor()
-        
-        if params:
+
+        if params is not None:
             cursor.execute(sql, params)
         else:
             cursor.execute(sql)
-            
+
         if cursor.description:
             columns = [column[0] for column in cursor.description]
-            results = []
-            for row in cursor.fetchall():
-                results.append(dict(zip(columns, row)))
-            return results
-        else:
-            conn.commit()
-            return True
-            
-    except Exception as e:
-        print(f"DB Error | SQL: {sql} | Msg: {e}")
+            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+        conn.commit()
+        return True
+    except Exception:
+        logging.exception("DB query failed | SQL: %s", sql)
         if sql.strip().upper().startswith("SELECT"):
             return []
-        return False  
+        return False
     finally:
         if conn:
             conn.close()
-
