@@ -24,7 +24,6 @@ logging.basicConfig(level=logging.INFO,format="%(asctime)s | %(levelname)s | %(m
 def create_app():
     app = Flask(__name__)
     app.config.from_mapping(get_settings())
-
     proxy_count = app.config["PROXY_COUNT"]
     if proxy_count:
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=proxy_count, x_proto=proxy_count, x_host=proxy_count, x_port=proxy_count,)
@@ -40,13 +39,7 @@ def create_app():
         execute_query(sql, (error_code, str(error), traceback_text))
         logging.error("Unhandled error %s\n%s", error_code, traceback_text)
 
-        api_prefixes = (
-            "/admin/manage_user",
-            "/doc_tool",
-            "/mapping_tool",
-            "/notes_tool",
-            "/annotation",
-        )
+        api_prefixes = ("/admin/manage_user","/doc_tool","/mapping_tool","/notes_tool","/annotation",)
         if request.path.startswith(api_prefixes):
             return jsonify({"success": False, "message": f"系統錯誤，錯誤代碼：{error_code}"}), 500
         return f"<script>alert('系統錯誤，錯誤代碼：{error_code}'); window.history.back();</script>", 500
@@ -80,11 +73,5 @@ if __name__ == "__main__":
     else:
         logging.info("Waitress server starting on 0.0.0.0:50001")
         serve(app,host="0.0.0.0",port=50001,threads=app.config["WAITRESS_THREADS"],trusted_proxy=app.config["TRUSTED_PROXY"],
-            trusted_proxy_headers={
-                "x-forwarded-for",
-                "x-forwarded-host",
-                "x-forwarded-proto",
-                "x-forwarded-port",
-            },
-            clear_untrusted_proxy_headers=True,
-        )
+            trusted_proxy_headers={"x-forwarded-for","x-forwarded-host","x-forwarded-proto","x-forwarded-port",},
+            clear_untrusted_proxy_headers=True,)
