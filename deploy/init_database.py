@@ -26,6 +26,10 @@ SCHEMA_STATEMENTS = (
     END
     """,
     """
+    IF COL_LENGTH(N'dbo.Users', N'Password') < 255
+        ALTER TABLE dbo.Users ALTER COLUMN Password nvarchar(255) NULL
+    """,
+    """
     IF OBJECT_ID(N'dbo.Documents', N'U') IS NULL
     BEGIN
         CREATE TABLE dbo.Documents (

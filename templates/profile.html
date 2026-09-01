@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}使用者資訊 - PDF做筆記{% endblock %}
+{% block content %}
+<div class="container py-5" style="max-width: 540px; margin-top: 64px;">
+    <div class="card shadow-sm border-0 rounded-3">
+        <div class="card-body p-4 p-md-5">
+            <h1 class="h4 mb-2">使用者資訊</h1>
+            <p class="text-muted small mb-4">檢視目前登入帳號的基本資料與密碼設定。</p>
+
+            <dl class="row small mb-4">
+                <dt class="col-sm-4 text-muted">姓名</dt><dd class="col-sm-8">{{ user.Name if user else '-' }}</dd>
+                <dt class="col-sm-4 text-muted">帳號</dt><dd class="col-sm-8">{{ user.UserID if user else '-' }}</dd>
+                <dt class="col-sm-4 text-muted">職位</dt><dd class="col-sm-8">{{ user.Position if user else '-' }}</dd>
+                <dt class="col-sm-4 text-muted">院區</dt><dd class="col-sm-8">{{ user.Location if user else '-' }}</dd>
+            </dl>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% for category, message in messages %}
+                    <div class="alert {{ 'alert-success' if category == 'success' else 'alert-danger' }} py-2" role="alert">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endwith %}
+
+            <button class="btn btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#changePasswordForm" aria-expanded="{{ 'true' if show_password_form else 'false' }}" aria-controls="changePasswordForm">
+                變更密碼
+            </button>
+
+            <div class="collapse {% if show_password_form %}show{% endif %} mt-4" id="changePasswordForm">
+            <form method="post" class="border-top pt-4">
+                <div class="mb-3">
+                    <label for="current_password" class="form-label">目前密碼</label>
+                    <input type="password" class="form-control" id="current_password" name="current_password" autocomplete="current-password" required>
+                </div>
+                <div class="mb-3">
+                    <label for="new_password" class="form-label">新密碼</label>
+                    <input type="password" class="form-control" id="new_password" name="new_password" autocomplete="new-password" required>
+                </div>
+                <div class="mb-4">
+                    <label for="confirm_password" class="form-label">確認新密碼</label>
+                    <input type="password" class="form-control" id="confirm_password" name="confirm_password" autocomplete="new-password" required>
+                </div>
+                <div class="d-flex justify-content-end gap-2">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#changePasswordForm">取消</button>
+                    <button type="submit" class="btn btn-dark">儲存新密碼</button>
+                </div>
+            </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

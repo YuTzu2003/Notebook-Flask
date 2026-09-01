@@ -42,7 +42,7 @@
                         <a class="nav-link {{'active' if request.endpoint == 'auth.admin_users' else ''}}" href="{{ url_for('auth.admin_users') }}" data-text="使用者管理">使用者管理</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {{'active' if request.endpoint == 'auth.error_log' else ''}}" href="{{ url_for('auth.error_log') }}" data-text="系統日誌">系統日誌</a>
+                        <a class="nav-link {{'active' if request.endpoint == 'auth.system_log' else ''}}" href="{{ url_for('auth.system_log') }}" data-text="系統日誌">系統日誌</a>
                     </li>
                     {% endif %}             
                 </ul>
@@ -72,10 +72,14 @@
                         <span class="d-none d-md-block fw-medium">{{ session.Name }}</span>
                     </button>
                 <ul class="dropdown-menu dropdown-menu-end shadow border-0 mt-2">
-                    <li><h6 class="dropdown-header text-uppercase small text-muted">使用者資訊</h6></li>
                     <li><span class="dropdown-item-text small">編號: {{ session.UserID }}</span></li>
                     <li><span class="dropdown-item-text small">職位: {{ session.Position }}</span></li>
                     <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <a class="dropdown-item d-flex align-items-center" href="{{ url_for('auth.profile') }}">
+                            <i class="bi bi-person-vcard me-2"></i>使用者資訊
+                        </a>
+                    </li>
                     <li>
                         <a class="dropdown-item text-danger d-flex align-items-center" href="{{ url_for('auth.logout') }}">
                             <i class="bi bi-box-arrow-right me-2"></i>登出

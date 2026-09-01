@@ -1,57 +1,10 @@
 import os
 from flask import Blueprint, jsonify, render_template, request, redirect, url_for, session, flash
 from functools import wraps
-import json
 import secrets
-import threading
-from datetime import datetime
-# from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
+from modules.audit import write_audit_log
 from modules.db import get_conn
-
-LOG_FILE_PATH = os.path.join("tasks", "login_history.json")
-LOGIN_LOG_LOCK = threading.Lock()
-
-
-def synchronized(lock):
-    def decorate(func):
-        @wraps(func)
-        def locked(*args, **kwargs):
-            with lock:
-                return func(*args, **kwargs)
-        return locked
-    return decorate
-
-@synchronized(LOGIN_LOG_LOCK)
-def log_login_attempt(emp_id, status, message, ip_address):
-    os.makedirs(os.path.dirname(LOG_FILE_PATH), exist_ok=True)
-    
-    log_entry = {
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "emp_id": emp_id,
-        "status": status,
-        "message": message,
-        "ip": ip_address
-    }
-    
-    logs = []
-    if os.path.exists(LOG_FILE_PATH):
-        try:
-            with open(LOG_FILE_PATH, "r", encoding="utf-8") as f:
-                logs = json.load(f)
-        except Exception:
-            pass
-            
-    logs.append(log_entry)
-    
-    # 保留最近 1000 筆
-    if len(logs) > 1000:
-        logs = logs[-1000:]
-        
-    try:
-        with open(LOG_FILE_PATH, "w", encoding="utf-8") as f:
-            json.dump(logs, f, ensure_ascii=False, indent=4)
-    except Exception as e:
-        print("Error saving log:", e)
 
 auth_bp = Blueprint("auth", __name__, template_folder="../templates")
 
@@ -63,6 +16,68 @@ def login_required(func):
             return redirect(url_for("auth.login"))
         return func(*args, **kwargs)
     return wrapper
+
+
+def password_matches(stored_password, provided_password):
+    stored_password = str(stored_password)
+    if "$" not in stored_password:
+        return secrets.compare_digest(stored_password, provided_password)
+    try:
+        return check_password_hash(stored_password, provided_password)
+    except (TypeError, ValueError):
+        return secrets.compare_digest(str(stored_password), provided_password)
+
+
+@auth_bp.route("/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    if request.method == "POST":
+        current_password = request.form.get("current_password", "")
+        new_password = request.form.get("new_password", "")
+        confirm_password = request.form.get("confirm_password", "")
+
+        if not current_password or not new_password or not confirm_password:
+            flash("請完整填寫所有密碼欄位。", "error")
+            return render_template("profile.html", show_password_form=True)
+
+        if new_password != confirm_password:
+            flash("新密碼與確認密碼不一致。", "error")
+            return render_template("profile.html", show_password_form=True)
+
+        conn = get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT UserID, Name, Position, Location, Password FROM Users WHERE ID = ?",
+                (session["ID"],),
+            )
+            user = cursor.fetchone()
+
+            if not user or not password_matches(user.Password, current_password):
+                write_audit_log("auth_change_password_failed", {"reason": "current_password_incorrect"})
+                flash("目前密碼不正確。", "error")
+                return render_template("profile.html", user=user, show_password_form=True)
+
+            cursor.execute(
+                "UPDATE Users SET Password = ? WHERE ID = ?",
+                (generate_password_hash(new_password), session["ID"]),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        write_audit_log("auth_change_password", {"status": "success"})
+        flash("密碼已更新。", "success")
+        return redirect(url_for("auth.profile"))
+
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT UserID, Name, Position, Location FROM Users WHERE ID = ?", (session["ID"],))
+        user = cursor.fetchone()
+    finally:
+        conn.close()
+    return render_template("profile.html", user=user)
 
 
 # 登入
@@ -79,8 +94,7 @@ def login():
         user = cursor.fetchone()
         ip_address = request.remote_addr
 
-        # if user and check_password_hash(user.Password, password):
-        if user and secrets.compare_digest(str(user.Password), password):
+        if user and password_matches(user.Password, password):
             session["ID"] = user.ID        
             session["UserID"] = user.UserID 
             session["Name"] = user.Name     
@@ -91,7 +105,7 @@ def login():
             conn.commit()
             conn.close()
             
-            log_login_attempt(emp_id, "Success", "登入成功", ip_address)
+            write_audit_log("auth_login_success", {"login_id": emp_id, "status": "success"}, user_id=user.ID, remote_addr=ip_address)
             
             return redirect(url_for("bp_index.index"))
 
@@ -99,7 +113,7 @@ def login():
         
         # 紀錄失敗
         message = "密碼錯誤" if user else "帳號不存在"
-        log_login_attempt(emp_id, "Failed", message, ip_address)
+        write_audit_log("auth_login_failed", {"login_id": emp_id, "reason": message}, user_id=user.ID if user else None, remote_addr=ip_address)
         
         flash("帳號或密碼錯誤")
 
@@ -109,6 +123,7 @@ def login():
 # 登出
 @auth_bp.route("/logout")
 def logout():
+    write_audit_log("auth_logout", {"name": session.get("Name")})
     session.clear()
     return redirect(url_for("auth.login"))
 
@@ -193,7 +208,7 @@ def manage_user():
     elif action == "edit":
         if pwd:
             sql = "UPDATE Users SET Name=?, Password=?, Position=?, Location=?, UserID=? WHERE ID=?"
-            cursor.execute(sql, (name, pwd, pos, loc, userid, guid_id))
+            cursor.execute(sql, (name, generate_password_hash(pwd), pos, loc, userid, guid_id))
         else:
             sql = "UPDATE Users SET Name=?, Position=?, Location=?, UserID=? WHERE ID=?"
             cursor.execute(sql, (name, pos, loc, userid, guid_id))
@@ -202,7 +217,7 @@ def manage_user():
         return jsonify({"success": True, "message": "Update Successful!"})
 
     elif action == "add":
-        if not userid or not name:
+        if not userid or not name or not pwd:
             return jsonify({"success": False, "message": "編號與姓名為必填"}), 400
 
         cursor.execute("SELECT ID FROM Users WHERE UserID = ?", (userid,))
@@ -210,21 +225,55 @@ def manage_user():
             return jsonify({"success": False, "message": f"編號 {userid} 已存在"}), 400
 
         sql = """INSERT INTO Users (UserID, Name, Password, Position, Location) VALUES (?, ?, ?, ?, ?)"""
-        cursor.execute(sql, (userid, name, pwd, pos, loc))
+        cursor.execute(sql, (userid, name, generate_password_hash(pwd), pos, loc))
         conn.commit()
         return jsonify({"success": True, "message": "Add Successful"})
 
-@auth_bp.route("/admin/error_log")
+@auth_bp.route("/admin/system_log")
 @login_required
 @admin_required
-def error_log():
+def system_log():
     conn = get_conn()
     cursor = conn.cursor()
     
-    sql = "SELECT TOP 100 LogID, ErrorCode, ErrorMessage, Traceback, CreatedAt FROM audit_logs ORDER BY CreatedAt DESC"
+    date_filter = request.args.get('date', '').strip()
+    sort_order = request.args.get('sort', 'desc').lower()
+    search_query = request.args.get('search', '').strip()
+    
+    if sort_order not in ['asc', 'desc']:
+        sort_order = 'desc'
+        
+    sql = """SELECT TOP 100 logs.LogID, logs.[Action], logs.CreatedAt, logs.User_id,
+                    logs.Detail_json, logs.Remote_addr, users.Name AS UserName
+             FROM Audit_logs AS logs
+             LEFT JOIN Users AS users ON logs.User_id = CONVERT(varchar(100), users.ID)
+                                      OR logs.User_id = users.UserID
+             WHERE 1=1"""
+             
+    params = []
+    
+    if date_filter:
+        sql += " AND CAST(logs.CreatedAt AS DATE) = ?"
+        params.append(date_filter)
+        
+    if search_query:
+        sql += """ AND (
+            logs.[Action] LIKE ? 
+            OR users.Name LIKE ? 
+            OR logs.User_id LIKE ? 
+            OR logs.Remote_addr LIKE ?
+        )"""
+        like_term = f"%{search_query}%"
+        params.extend([like_term, like_term, like_term, like_term])
+        
+    sql += f" ORDER BY logs.CreatedAt {sort_order}"
     
     try:
-        cursor.execute(sql)
+        if params:
+            cursor.execute(sql, tuple(params))
+        else:
+            cursor.execute(sql)
+            
         columns = [column[0] for column in cursor.description]
         logs = [dict(zip(columns, row)) for row in cursor.fetchall()]
     except Exception as e:
@@ -232,18 +281,4 @@ def error_log():
         logs = []
         
     conn.close()
-    return render_template("error_log.html", logs=logs)
-
-@auth_bp.route("/admin/login_logs")
-@login_required
-@admin_required
-def api_login_logs():
-    logs = []
-    if os.path.exists(LOG_FILE_PATH):
-        try:
-            with open(LOG_FILE_PATH, "r", encoding="utf-8") as f:
-                logs = json.load(f)
-        except Exception:
-            pass
-    # 回傳反轉的陣列，讓最新的在前面
-    return jsonify({"success": True, "logs": logs[::-1]})
+    return render_template("system_log.html", logs=logs, current_date=date_filter, current_sort=sort_order, current_search=search_query)

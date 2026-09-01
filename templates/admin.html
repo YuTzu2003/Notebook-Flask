@@ -28,8 +28,7 @@
                     <h5 class="fw-bold mb-1">使用者管理</h5>
                     <p class="text-muted small mb-0">管理系統使用者帳號與權限</p>
                 </div>
-                <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-outline-dark px-4 text-nowrap" data-bs-toggle="offcanvas" data-bs-target="#loginLogOffcanvas" onclick="fetchLoginLogs()">登入紀錄</button>
+                <div class="d-flex gap-2 admin-user-actions">
                     <button class="btn btn-dark px-4 text-nowrap" onclick="openModal('add')">新增使用者</button>
                 </div>
             </div>
@@ -169,21 +168,6 @@
                 <div class="modal-footer border-top-0 pt-0 pb-4">
                     <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal">取消</button>
                     <button type="button" class="btn btn-dark px-4" onclick="saveUser()">儲存</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Login Logs Offcanvas -->
-    <div class="offcanvas offcanvas-end" tabindex="-1" id="loginLogOffcanvas" aria-labelledby="loginLogOffcanvasLabel" style="width: 450px;">
-        <div class="offcanvas-header border-bottom bg-light">
-            <h5 class="offcanvas-title fw-bold text-dark" id="loginLogOffcanvasLabel">系統登入紀錄</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
-        </div>
-        <div class="offcanvas-body p-0 bg-white">
-            <div id="loginLogsContainer" class="list-group list-group-flush">
-                <div class="p-5 text-center text-muted">
-                    <div class="spinner-border spinner-border-sm me-2"></div>正在載入紀錄...
                 </div>
             </div>
         </div>

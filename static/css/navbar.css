@@ -69,21 +69,39 @@ body {
 
 .navbar-nav .nav-link:hover {
     color: #0f172a !important;
-    background-color: #f8f9fa;
-    border-radius: 8px;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08); /* 灰色陰影 */
-    z-index: 1;
+    font-weight: 700;
+    background-color: transparent;
+    border-radius: 0;
+    box-shadow: none;
 }
 
 .navbar-nav .nav-link.active {
     color: #0f172a !important;
     font-weight: 700;
-    background-color: #f1f5f9; /* 灰色背景停留 */
-    border-radius: 8px;
+    background-color: transparent;
+    border-radius: 0;
 }
 
 @media (min-width: 992px) {
+    .navbar-nav .nav-link::before {
+        content: "";
+        position: absolute;
+        bottom: 0;
+        left: 10%;
+        right: 10%;
+        height: 3px;
+        background-color: #0f172a;
+        border-radius: 3px 3px 0 0;
+        transform: scaleX(0);
+        transition: transform 0.3s ease, opacity 0.3s ease;
+        opacity: 0;
+    }
 
+    .navbar-nav .nav-link:hover::before,
+    .navbar-nav .nav-link.active::before {
+        transform: scaleX(1);
+        opacity: 1;
+    }
 }
 
 @media (max-width: 991.98px) {
