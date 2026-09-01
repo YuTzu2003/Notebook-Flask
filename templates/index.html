@@ -22,20 +22,64 @@
     </section>
 
     <section class="upload-section" aria-labelledby="upload-title">
-        <div class="section-heading">
-            <div>
-                <span class="section-kicker text-secondary">文件管理</span>
-                <h2 id="upload-title">上傳文件</h2>
+        <div class="row g-4">
+            <!-- 左側：上傳區 -->
+            <div class="col-lg-5 col-xl-4 d-flex flex-column">
+                <div class="d-flex align-items-center mb-3 text-start">
+                    <h2 class="h5 fw-bold mb-0 text-dark">上傳編輯文件</h2>
+                    <i class="bi bi-question-circle text-muted ms-2" style="cursor: help;" data-bs-toggle="tooltip" data-bs-placement="right" title="提供上傳文件，可以線上直接製作與編輯"></i>
+                </div>
+                <div id="dropZone" class="upload-zone flex-grow-1 d-flex flex-column justify-content-center align-items-center text-center p-4" role="button" tabindex="0" aria-label="選擇或拖曳 PDF 文件上傳" style="min-height: 200px;">
+                    <i class="bi bi-cloud-arrow-up display-4 text-secondary opacity-50 mb-3" aria-hidden="true"></i>
+                    <div>
+                        <p class="mb-1 fw-bold text-dark" style="font-size: 0.95rem;">拖曳 PDF 至此處，或點擊選擇檔案</p>
+                        <span class="text-muted" style="font-size: 0.8rem;">僅支援 PDF 格式</span>
+                    </div>
+                    <input type="file" id="pdfInput" accept=".pdf" hidden>
+                </div>
             </div>
-            <p>新增需要製作的PDF文件，建立後即可進行文件編輯</p>
-        </div>
-        <div id="dropZone" class="upload-zone" role="button" tabindex="0" aria-label="選擇或拖曳 PDF 文件上傳">
-            <i class="bi bi-file-earmark-arrow-up" aria-hidden="true"></i>
-            <div>
-                <p>拖曳 PDF 至此處，或點擊選擇檔案</p>
-                <span>僅支援 PDF 格式</span>
+
+            <!-- 右側：線上製作筆記 (檔案列表) -->
+            <div class="col-lg-7 col-xl-8 d-flex flex-column">
+                <div class="d-flex justify-content-between align-items-end mb-3">
+                    <div>
+                        <span class="section-kicker text-secondary">線上製作筆記</span>
+                        <h2 class="h5 fw-bold mb-0 text-dark">可編輯文件</h2>
+                    </div>
+                </div>
+                
+                <!-- 固定高度並帶有捲軸的列表區域 -->
+                <div class="flex-grow-1 pe-2" style="height: 320px; overflow-y: auto;" id="doc-list">
+                    <div class="d-flex flex-column gap-2 h-100">
+                        {% for doc in documents %}
+                        <div class="card shadow-sm doc-item transition-all" style="cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.classList.add('shadow'); this.style.transform='translateY(-2px)';" onmouseout="this.classList.remove('shadow'); this.style.transform='translateY(0)';">
+                            <div class="card-body p-2 px-3 d-flex justify-content-between align-items-center" onclick="doc_tool('edit', '{{ doc.DocID }}', event)">
+                                <div class="d-flex align-items-center gap-3 overflow-hidden flex-grow-1" style="min-width: 0;">
+                                    <div class="bg-danger bg-opacity-10 rounded p-1 text-danger flex-shrink-0">
+                                        <i class="bi bi-file-earmark-pdf fs-5"></i>
+                                    </div>
+                                    <div class="d-flex align-items-center gap-2 overflow-hidden flex-grow-1" style="min-width: 0;">
+                                        <span class="text-truncate fw-medium text-dark" title="{{ doc.OriginalName }}" style="font-size: 0.9rem;">{{ doc.OriginalName }}</span>
+                                        <span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary fw-normal flex-shrink-0" style="font-size: 0.75rem;">{{ doc.Pages }} 頁</span>
+                                    </div>
+                                </div>
+                                <div class="d-flex align-items-center flex-shrink-0 ms-3 gap-3">
+                                    <span class="text-muted text-nowrap" style="font-size: 0.8rem;"><i class="bi bi-clock me-1"></i>{{ doc.UploadTime.strftime('%Y-%m-%d %H:%M') }}</span>
+                                    <button class="btn btn-sm btn-outline-danger border-0 flex-shrink-0" onclick="event.stopPropagation(); doc_tool('delete', '{{ doc.DocID }}', event)" title="刪除檔案">
+                                        <i class="bi bi-trash3"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="text-center py-5 text-muted bg-light rounded-3 h-100 d-flex flex-column justify-content-center align-items-center border border-dashed">
+                            <i class="bi bi-folder2-open display-4 mb-3 text-secondary opacity-25"></i>
+                            <p class="mb-0 small">目前尚無可編輯的文件</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
             </div>
-            <input type="file" id="pdfInput" accept=".pdf" hidden>
         </div>
     </section>
 
@@ -54,7 +98,7 @@
             {% for record in transfer_records %}
             <article class="record-card list-item">
                 <div class="record-card__document">
-                    <div class="record-card__icon bg-warning-subtle border-warning"><i class="bi bi-journal-text text-dark" aria-hidden="true"></i></div>
+                    <div class="record-card__icon bg-warning-subtle border-warning"><i class="bi bi-journal-arrow-up text-dark" aria-hidden="true"></i></div>
                     <div>
                         <h6 title="{{ record.SourceFileName }}">{{ record.SourceFileName }}</h6>
                         <p>
@@ -90,7 +134,6 @@
     <p id="loadingText">處理中...</p>
 </div>
 {% endblock %}
-
 {% block extra_js %}
     <script src="/static/js/index.js"></script>
 {% endblock %}

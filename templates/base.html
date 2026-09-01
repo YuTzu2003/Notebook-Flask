@@ -52,7 +52,7 @@
                 <div class="dropdown me-3">
                     <a class="text-secondary position-relative text-decoration-none" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false" id="notifDropdown">
                         <i class="bi bi-bell-fill fs-5"></i>
-                        <span class="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle d-none" id="notifBadge">
+                        <span class="position-absolute top-0 start-100 translate-middle p-1 bg-danger border rounded-circle d-none" id="notifBadge">
                             <span class="visually-hidden">New alerts</span>
                         </span>
                     </a>
@@ -174,6 +174,12 @@
                     document.getElementById('notifBadge').classList.add('d-none');
                 });
             }
+            
+            // 初始化 Bootstrap Tooltips
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+              return new bootstrap.Tooltip(tooltipTriggerEl)
+            })
         });
 
         // Global Background Task Polling (Optimized to save resources)

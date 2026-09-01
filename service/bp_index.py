@@ -22,7 +22,11 @@ def index():
                     WHERE H.UserID = ?
                     ORDER BY H.CreateTime DESC"""
     transfer_records = execute_query(sql_history, (user_id,))
-    return render_template("index.html", transfer_records=transfer_records)
+    
+    sql_docs = "SELECT * FROM Documents WHERE User_ID = ? ORDER BY UploadTime DESC"
+    documents = execute_query(sql_docs, (user_id,))
+    
+    return render_template("index.html", transfer_records=transfer_records, documents=documents)
 
 @bp_index.route("/doc_tool", methods=["POST"])
 @login_required

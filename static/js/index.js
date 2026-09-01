@@ -176,3 +176,18 @@ document.getElementById('searchInput').addEventListener('keyup', function(e) {
     });
 });
 
+const docSearchInput = document.getElementById('docSearchInput');
+if (docSearchInput) {
+    docSearchInput.addEventListener('keyup', function(e) {
+        const term = e.target.value.toLowerCase();
+        const items = document.querySelectorAll('#doc-list .doc-item');
+        items.forEach(item => {
+            const title = item.querySelector('h6').textContent.toLowerCase();
+            if (title.includes(term)) {
+                item.style.setProperty('display', 'block', 'important');
+            } else {
+                item.style.setProperty('display', 'none', 'important');
+            }
+        });
+    });
+}

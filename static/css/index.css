@@ -57,8 +57,8 @@ body { background: var(--home-ground) !important; color: var(--home-ink); font-f
 .records-list { display: grid; gap: var(--space-xs); }
 .record-card { display: flex; flex-direction: column; align-items: stretch; justify-content: space-between; gap: var(--space-md); padding: var(--space-sm) var(--space-md); }
 .record-card__document { display: flex; align-items: center; min-width: 0; gap: var(--space-sm); }
-.record-card__icon { display: grid; width: 2.5rem; height: 2.5rem; flex: 0 0 auto; place-items: center; background: var(--home-green-soft); border: 1px solid var(--home-green); border-radius: 50%; color: var(--home-green); }
-.record-card h6 { overflow: hidden; margin: 0 0 0.25rem; color: var(--home-ink); font-size: 0.95rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.record-card__icon { display: grid; width: 2.5rem; height: 2.5rem; flex: 0 0 auto; place-items: center; background: var(--home-green-soft); border: 1px solid var(--home-green); border-radius: 0.5rem; color: var(--home-green); }
+.record-card h6 { overflow: hidden; margin: 0 0 0.25rem; color: var(--home-ink); font-size: 0.95rem; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; line-height: 1.4; }
 .record-card p { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin: 0; color: var(--home-muted); font-size: 0.8rem; }
 .record-card p span { white-space: nowrap; }
 .record-card p i { color: var(--home-green); }

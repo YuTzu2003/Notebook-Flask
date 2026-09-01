@@ -4,7 +4,7 @@ html {
 
 body {
     font-family: 'Inter', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    background-color: #f7f7f7;
+    background-color: #ffffff;
     color: #1a1a1a;
     min-height: 100vh;
     padding-bottom: 4rem;
@@ -174,8 +174,10 @@ body {
 }
 
 .card {
-    border: 1px solid #e2e8f0 !important;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important;
+    background-color: #fcfdfc;
+    border: 1px solid #c8cdca !important;
+    border-radius: 0.75rem !important;
+    box-shadow: 0 0.25rem 0 rgba(48, 54, 52, 0.04) !important;
 }
 
 .table-responsive {
