@@ -46,7 +46,7 @@ def create_app():
                 "path": request.path,
                 "method": request.method,
             },
-            user_id=session.get("UserID"),
+            user_id=session.get("ID"),
         )
         g.audit_error_logged = True
         logging.error("Unhandled error %s\n%s", error_code, traceback_text)
@@ -89,7 +89,10 @@ if __name__ == "__main__":
     if app.config["APP_ENV"] == "development":
         app.run( host="0.0.0.0", port=50001, debug=app.config["DEBUG"],)
     else:
-        logging.info("Waitress server starting on 0.0.0.0:50001")
-        serve(app,host="0.0.0.0",port=50001,threads=app.config["WAITRESS_THREADS"],trusted_proxy=app.config["TRUSTED_PROXY"],
+        host = app.config["WAITRESS_HOST"]
+        port = app.config["WAITRESS_PORT"]
+        logging.info("Waitress server starting on %s:%s", host, port)
+        serve(app,host=host,port=port,threads=app.config["WAITRESS_THREADS"],backlog=app.config["WAITRESS_BACKLOG"],
+            connection_limit=app.config["WAITRESS_CONNECTION_LIMIT"],channel_timeout=app.config["WAITRESS_CHANNEL_TIMEOUT"],trusted_proxy=app.config["TRUSTED_PROXY"],
             trusted_proxy_headers={"x-forwarded-for","x-forwarded-host","x-forwarded-proto","x-forwarded-port",},
             clear_untrusted_proxy_headers=True,)

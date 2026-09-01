@@ -7,14 +7,14 @@ import uuid
 import shutil
 from modules.auth import login_required
 from modules.db import execute_query
+from modules.task_queue import enqueue_task
 from modules.move_annotation.pdf_annotation_migrate import migrate_all_to_pdf
 import threading
 import time
-import os
 import json
 from modules.move_annotation.create_template import generate_dynamic_template
 
-migrate_semaphore = threading.Semaphore(3)
+migrate_semaphore = threading.Semaphore(max(1, int(os.getenv("PDF_TASK_CONCURRENCY", "1"))))
 bp_notes = Blueprint('bp_notes', __name__)
 VERSION_Folder = 'tasks/docVersion'
 Mapping_Folder = "tasks/docMapResult"
@@ -24,6 +24,7 @@ def run_migrate_background(app, transfer_id, old_pdf_path, new_pdf_path, csv_map
     with app.app_context():
         migrate_semaphore.acquire()
         try:
+            execute_query("UPDATE Hospital.dbo.NoteTransferHistory SET ResultName = 'PROCESSING' WHERE TransferID = ?", (transfer_id,))
             base_dir = os.path.dirname(output_pdf)
             dynamic_template_path = os.path.join(base_dir, "Template.pdf")
             dynamic_csv_path = os.path.join(base_dir, "Mapping.csv")
@@ -52,11 +53,13 @@ def run_migrate_background(app, transfer_id, old_pdf_path, new_pdf_path, csv_map
             time.sleep(1.5)
             sql = "UPDATE Hospital.dbo.NoteTransferHistory SET ResultName = ? WHERE TransferID = ?"
             execute_query(sql, (output_filename, transfer_id))
+            return True
             
         except Exception as e:
             print("Background Migrate Error:", e)
             sql = "UPDATE Hospital.dbo.NoteTransferHistory SET ResultName = 'ERROR' WHERE TransferID = ?"
             execute_query(sql, (transfer_id,))
+            return False
         finally:
             migrate_semaphore.release()
 
@@ -81,11 +84,13 @@ def notes_page():
                     WHERE M.IsPublish = 1"""
     mapping_history = execute_query(sql_mapping)
     
-    sql_history = f"""SELECT H.TransferID, H.SourceFileName,H.ResultName,H.CreateTime,V_Old.Version AS OldV, V_New.Version AS NewV
+    sql_history = f"""SELECT H.TransferID, H.SourceFileName,H.ResultName,H.CreateTime,V_Old.Version AS OldV, V_New.Version AS NewV,
+                    BackgroundTasks.Status AS TaskStatus
                     FROM Hospital.dbo.NoteTransferHistory H
                     LEFT JOIN MappingRecord M ON H.MappingID = M.RecordID
                     LEFT JOIN DocVersion V_Old ON M.OldDocID = V_Old.ID
                     LEFT JOIN DocVersion V_New ON M.NewDocID = V_New.ID
+                    LEFT JOIN BackgroundTasks ON BackgroundTasks.TaskID = H.TransferID
                     WHERE H.UserID = ?
                     ORDER BY {order_col} {order_dir}"""
     history = execute_query(sql_history, (user_id,))
@@ -138,13 +143,22 @@ def migrate_pdf_api():
         output_filename = f"Move_{original_filename}"
         output_path = os.path.join(note_dir, output_filename)
 
-        # 先寫入資料庫，標記為 PROCESSING
         sql_insert = """INSERT INTO Hospital.dbo.NoteTransferHistory (TransferID, UserID, MappingID, SourceFileName, ResultName) VALUES (?, ?, ?, ?, ?)"""
-        execute_query(sql_insert, (TransferID, user_id, mapping_id, pdf_with_notes.filename, 'PROCESSING'))
-        app_obj = current_app._get_current_object()
-        thread = threading.Thread(target=run_migrate_background, args=(app_obj, TransferID, user_pdf_path, target_new_pdf_path, mapping_csv_path, output_path, diff_pages_str, output_filename, json_path))
-        thread.start()
-        return jsonify({"status": "success", "message": "開始執行！"})
+        execute_query(sql_insert, (TransferID, user_id, mapping_id, pdf_with_notes.filename, 'QUEUED'))
+        task_payload = {
+            "transfer_id": TransferID,
+            "old_pdf_path": user_pdf_path,
+            "new_pdf_path": target_new_pdf_path,
+            "csv_mapping": mapping_csv_path,
+            "output_pdf": output_path,
+            "diff_pages_str": diff_pages_str,
+            "output_filename": output_filename,
+            "json_path": json_path,
+        }
+        if enqueue_task(TransferID, "migration", user_id, task_payload):
+            return jsonify({"status": "success", "message": "筆記轉移已加入排隊。"})
+        execute_query("UPDATE Hospital.dbo.NoteTransferHistory SET ResultName = 'ERROR' WHERE TransferID = ?", (TransferID,))
+        return jsonify({"status": "error", "message": "無法建立排隊工作"}), 500
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
   

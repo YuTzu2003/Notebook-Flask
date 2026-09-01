@@ -15,7 +15,7 @@
 
 - **後端框架**: Flask (Python 3.12+)
 - **資料庫**: SQL Server
-- **伺服器**: Waitress / Nginx
+- **正式架構**: Nginx 反向代理與靜態快取 + 多個 Waitress 工作程序 + SQL Server
 - **PDF 處理庫**: PyMuPDF (fitz), pdfplumber, pdfrw
 - **資料分析**: Pandas, RapidFuzz, Scikit-learn
 - **環境管理**: [uv](https://github.com/astral-sh/uv)
@@ -24,7 +24,7 @@
 
 ### 系統部署與架設教學
 
-本專案的完整架設步驟、開發與正式環境配置 (`.env` 設定)、自動化備份還原流程，以及服務啟動方式等詳細技術文件，皆已整理至專屬的手冊中：
+本專案的完整架設步驟、Windows 多人正式環境、Nginx 設定產生、自動開機、Debug／正式模式切換、資料庫升級與備份還原流程，皆已整理至專屬手冊：
 
 👉 **[請參閱：系統專案使用手冊](系統專案使用.md)**
 

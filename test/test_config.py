@@ -41,6 +41,8 @@ class ConfigTest(unittest.TestCase):
                 "APP_DEBUG": "false",
                 "SECRET_KEY": "0123456789abcdef0123456789abcdef",
                 "WAITRESS_THREADS": "24",
+                "WAITRESS_HOST": "127.0.0.1",
+                "WAITRESS_PORT": "50003",
             },
             clear=False,
         ):
@@ -48,6 +50,8 @@ class ConfigTest(unittest.TestCase):
         self.assertFalse(settings["DEBUG"])
         self.assertEqual(settings["PROXY_COUNT"], 1)
         self.assertEqual(settings["WAITRESS_THREADS"], 24)
+        self.assertEqual(settings["WAITRESS_HOST"], "127.0.0.1")
+        self.assertEqual(settings["WAITRESS_PORT"], 50003)
 
 
 if __name__ == "__main__":

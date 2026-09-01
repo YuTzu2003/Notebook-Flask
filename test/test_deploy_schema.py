@@ -26,6 +26,12 @@ class DeploySchemaTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "DATABASE_URL"):
                 init_database.main()
 
+    def test_schema_contains_current_audit_log_fields(self):
+        schema = "\n".join(init_database.SCHEMA_STATEMENTS)
+        self.assertIn("CREATE TABLE dbo.Audit_logs", schema)
+        self.assertIn("Detail_json varchar(max)", schema)
+        self.assertIn("IX_Audit_logs_User_id_CreatedAt", schema)
+
 
 if __name__ == "__main__":
     unittest.main()

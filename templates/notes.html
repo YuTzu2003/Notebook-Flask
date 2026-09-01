@@ -100,7 +100,9 @@
                                             <span class="text-dark fw-bold">{{ row.CreateTime.strftime('%Y-%m-%d %H:%M') }}</span>
                                         </div>
                                         <div id="status-container-{{ row.TransferID }}">
-                                            {% if row.ResultName == 'PROCESSING' %}
+                                            {% if row.ResultName == 'QUEUED' %}
+                                                <span id="status-badge-{{ row.TransferID }}" class="badge bg-warning bg-opacity-10 text-dark border border-warning border-opacity-25 fw-normal">queued</span>
+                                            {% elif row.ResultName == 'PROCESSING' %}
                                                 <span id="status-badge-{{ row.TransferID }}" data-transfer-id="{{ row.TransferID }}" class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-10 fw-normal d-flex align-items-center gap-1 processing-badge" style="width: fit-content;">
                                                     <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="width: 0.7rem; height: 0.7rem;"></span>
                                                     processing...
@@ -115,8 +117,8 @@
                                 </div>
 
                                 <div class="d-flex gap-2 ms-md-auto flex-shrink-0 mt-3 mt-md-0 border-start-md ps-md-2">
-                                    <a id="download-btn-{{ row.TransferID }}" href="/notes/action?action=download_pdf&filename={{ row.ResultName }}&transfer_id={{ row.TransferID }}" class="btn btn-sm btn-outline-dark px-3 {% if row.ResultName == 'PROCESSING' or row.ResultName == 'ERROR' %}disabled{% endif %}">下載</a>
-                                    <button id="delete-btn-{{ row.TransferID }}" type="button" class="btn btn-sm btn-outline-danger px-3 {% if row.ResultName == 'PROCESSING' %}disabled{% endif %}" onclick="deleteNote('{{ row.TransferID }}')">刪除</button>
+                                    <a id="download-btn-{{ row.TransferID }}" href="/notes/action?action=download_pdf&filename={{ row.ResultName }}&transfer_id={{ row.TransferID }}" class="btn btn-sm btn-outline-dark px-3 {% if row.ResultName == 'QUEUED' or row.ResultName == 'PROCESSING' or row.ResultName == 'ERROR' %}disabled{% endif %}">下載</a>
+                                    <button id="delete-btn-{{ row.TransferID }}" type="button" class="btn btn-sm btn-outline-danger px-3 {% if row.ResultName == 'QUEUED' or row.ResultName == 'PROCESSING' %}disabled{% endif %}" onclick="deleteNote('{{ row.TransferID }}')">刪除</button>
                                 </div>
                             </div>
                         </div>
