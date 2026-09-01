@@ -3,15 +3,15 @@ import logging
 import traceback
 import uuid
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request, session
 from waitress import serve
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 from config import get_settings
 from modules.annotation_edit import notes_bp
 from modules.auth import auth_bp
+from modules.audit import audit_request, write_audit_log
 from modules.backup import run_database_backup
-from modules.db import execute_query
 from service.bp_docVersion import bp_docVersion
 from service.bp_edit import bp_edit
 from service.bp_index import bp_index
@@ -35,14 +35,32 @@ def create_app():
 
         error_code = str(uuid.uuid4()).split("-")[0]
         traceback_text = traceback.format_exc()
-        sql = "INSERT INTO ErrorLogs (ErrorCode, ErrorMessage, Traceback, CreatedAt) VALUES (?, ?, ?, GETDATE())"
-        execute_query(sql, (error_code, str(error), traceback_text))
+        endpoint = (request.endpoint or "system").replace(".", "_")
+        write_audit_log(
+            f"{endpoint}_error",
+            {
+                "error_code": error_code,
+                "error_type": type(error).__name__,
+                "message": str(error),
+                "traceback": traceback_text,
+                "path": request.path,
+                "method": request.method,
+            },
+            user_id=session.get("UserID"),
+        )
+        g.audit_error_logged = True
         logging.error("Unhandled error %s\n%s", error_code, traceback_text)
 
         api_prefixes = ("/admin/manage_user","/doc_tool","/mapping_tool","/notes_tool","/annotation",)
         if request.path.startswith(api_prefixes):
             return jsonify({"success": False, "message": f"系統錯誤，錯誤代碼：{error_code}"}), 500
         return f"<script>alert('系統錯誤，錯誤代碼：{error_code}'); window.history.back();</script>", 500
+
+    @app.after_request
+    def write_request_audit_log(response):
+        if not getattr(g, "audit_error_logged", False):
+            return audit_request(response)
+        return response
 
     @app.get("/health")
     def health():

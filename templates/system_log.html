@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}系統日誌 - PDF做筆記{% endblock %}
+{% block extra_css %}
+    <link rel="stylesheet" href="/static/css/admin.css">
+    <style>
+        .audit-detail { max-height: 24rem; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 mx-xl-3" style="margin-top: 90px;">
+    <div class="card bg-light shadow-sm rounded-3 mb-4">
+        <div class="card-body p-4 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+            <div>
+                <h5 class="fw-bold mb-1">系統日誌</h5>
+                <p class="text-muted small mb-0">統一顯示登入、使用者操作與錯誤紀錄</p>
+            </div>
+            <form action="{{ url_for('auth.system_log') }}" method="GET" class="d-flex flex-wrap gap-2 align-items-center m-0">
+                <div class="input-group input-group-sm" style="width: auto;">
+                    <span class="input-group-text bg-white"><i class="bi bi-calendar3 text-muted"></i></span>
+                    <input type="date" name="date" class="form-control" value="{{ current_date or '' }}" onchange="this.form.submit()">
+                </div>
+                <div class="input-group input-group-sm" style="width: auto;">
+                    <span class="input-group-text bg-white"><i class="bi bi-sort-down text-muted"></i></span>
+                    <select name="sort" class="form-select" onchange="this.form.submit()">
+                        <option value="desc" {% if current_sort != 'asc' %}selected{% endif %}>時間 (最新)</option>
+                        <option value="asc" {% if current_sort == 'asc' %}selected{% endif %}>時間 (最舊)</option>
+                    </select>
+                </div>
+                <div class="input-group input-group-sm" style="width: 200px;">
+                    <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="search" class="form-control border-start-0 ps-0" placeholder="關鍵字..." value="{{ current_search or '' }}">
+                    <button class="btn btn-outline-secondary" type="submit">搜尋</button>
+                </div>
+                {% if current_date or current_search %}
+                <a href="{{ url_for('auth.system_log') }}" class="btn btn-sm btn-outline-danger" title="清除條件"><i class="bi bi-x-lg"></i></a>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    <div class="card rounded-3 border shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th class="ps-4 py-3 text-muted small fw-bold">時間</th>
+                            <th class="py-3 text-muted small fw-bold">操作</th>
+                            <th class="py-3 text-muted small fw-bold">使用者</th>
+                            <th class="py-3 text-muted small fw-bold">來源 IP</th>
+                            <th class="text-end pe-4 py-3 text-muted small fw-bold">明細</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in logs %}
+                        <tr>
+                            <td class="ps-4 text-muted small">{{ log.CreatedAt.strftime('%Y-%m-%d %H:%M:%S') if log.CreatedAt else '' }}</td>
+                            <td>
+                                {% set action_lower = log.Action.lower() %}
+                                {% if 'login_failed' in action_lower %}
+                                    <span class="font-monospace text-dark bg-warning bg-opacity-10 border border-warning border-opacity-25 px-2 py-1 rounded small">{{ log.Action }}</span>
+                                {% elif 'error' in action_lower or 'failed' in action_lower %}
+                                    <span class="font-monospace text-danger bg-danger bg-opacity-10 border border-danger border-opacity-25 px-2 py-1 rounded small">{{ log.Action }}</span>
+                                {% else %}
+                                    <span class="font-monospace text-secondary bg-secondary bg-opacity-10 border border-secondary border-opacity-25 px-2 py-1 rounded small">{{ log.Action }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ log.UserName or ('已刪除使用者' if log.User_id else '未登入') }}</td>
+                            <td class="text-muted small">{{ log.Remote_addr or '-' }}</td>
+                            <td class="text-end pe-4">
+                                <button type="button" class="btn btn-sm btn-outline-dark" data-bs-toggle="modal" data-bs-target="#logModal{{ log.LogID }}">查看</button>
+                            </td>
+                        </tr>
+                        <div class="modal fade" id="logModal{{ log.LogID }}" tabindex="-1" aria-labelledby="logModalLabel{{ log.LogID }}" aria-hidden="true">
+                            <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+                                <div class="modal-content shadow">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title fw-bold" id="logModalLabel{{ log.LogID }}">{{ log.Action }}</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <dl class="row small mb-3">
+                                            <dt class="col-sm-3 text-muted">時間</dt><dd class="col-sm-9">{{ log.CreatedAt.strftime('%Y-%m-%d %H:%M:%S') if log.CreatedAt else '' }}</dd>
+                                            <dt class="col-sm-3 text-muted">使用者</dt><dd class="col-sm-9">{{ log.UserName or ('已刪除使用者' if log.User_id else '未登入') }}</dd>
+                                            <dt class="col-sm-3 text-muted">來源 IP</dt><dd class="col-sm-9">{{ log.Remote_addr or '-' }}</dd>
+                                        </dl>
+                                        <h6 class="fw-bold">Detail JSON</h6>
+                                        <pre class="audit-detail bg-light border rounded p-3 mb-0">{{ log.Detail_json or '{}' }}</pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% else %}
+                        <tr><td colspan="5" class="text-center py-5 text-muted">目前尚無系統日誌。</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+

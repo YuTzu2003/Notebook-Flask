@@ -26,6 +26,10 @@ SCHEMA_STATEMENTS = (
     END
     """,
     """
+    IF COL_LENGTH(N'dbo.Users', N'Password') < 255
+        ALTER TABLE dbo.Users ALTER COLUMN Password nvarchar(255) NULL
+    """,
+    """
     IF OBJECT_ID(N'dbo.Documents', N'U') IS NULL
     BEGIN
         CREATE TABLE dbo.Documents (
@@ -88,14 +92,14 @@ SCHEMA_STATEMENTS = (
     END
     """,
     """
-    IF OBJECT_ID(N'dbo.ErrorLogs', N'U') IS NULL
+    IF OBJECT_ID(N'dbo.audit_logs', N'U') IS NULL
     BEGIN
-        CREATE TABLE dbo.ErrorLogs (
-            LogID bigint IDENTITY(1, 1) NOT NULL CONSTRAINT PK_ErrorLogs PRIMARY KEY,
+        CREATE TABLE dbo.audit_logs (
+            LogID bigint IDENTITY(1, 1) NOT NULL CONSTRAINT PK_audit_logs PRIMARY KEY,
             ErrorCode nvarchar(64) NOT NULL,
             ErrorMessage nvarchar(max) NOT NULL,
             Traceback nvarchar(max) NOT NULL,
-            CreatedAt datetime2 NOT NULL CONSTRAINT DF_ErrorLogs_CreatedAt DEFAULT SYSDATETIME()
+            CreatedAt datetime2 NOT NULL CONSTRAINT DF_audit_logs_CreatedAt DEFAULT SYSDATETIME()
         );
     END
     """,
