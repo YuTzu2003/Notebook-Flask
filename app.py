@@ -1,56 +1,95 @@
+import atexit
 import logging
 import traceback
 import uuid
-import os
-from flask import Flask, jsonify, request
+from apscheduler.schedulers.background import BackgroundScheduler
+from flask import Flask, g, jsonify, request, session
+from waitress import serve
 from werkzeug.exceptions import HTTPException
-from modules.db import execute_query
-from modules.auth import auth_bp
+from werkzeug.middleware.proxy_fix import ProxyFix
+from config import get_settings
 from modules.annotation_edit import notes_bp
-from service.bp_index import bp_index
-from service.bp_edit import bp_edit
+from modules.auth import auth_bp
+from modules.audit import audit_request, write_audit_log
+from modules.backup import run_database_backup
 from service.bp_docVersion import bp_docVersion
+from service.bp_edit import bp_edit
+from service.bp_index import bp_index
 from service.bp_mapping import bp_mapping
 from service.bp_notes import bp_notes
-from modules.backup import run_database_backup
-from apscheduler.schedulers.background import BackgroundScheduler
-import atexit
-from waitress import serve
 
-logging.basicConfig(level=logging.INFO,format='%(asctime)s | %(levelname)s | %(message)s',datefmt='%Y-%m-%d %H:%M:%S')
-app = Flask(__name__)
-app.config['TEMPLATES_AUTO_RELOAD'] = True 
 
-@app.errorhandler(Exception)
-def handle_exception(e):
-    if isinstance(e, HTTPException):
-        return e      
-    error_code = str(uuid.uuid4()).split('-')[0]
-    error_msg = str(e)
-    tb = traceback.format_exc()
-    sql = "INSERT INTO ErrorLogs (ErrorCode, ErrorMessage, Traceback, CreatedAt) VALUES (?, ?, ?, GETDATE())"
-    execute_query(sql, (error_code, error_msg, tb))
-    if request.path.startswith('/admin/manage_user') or request.path.startswith('/doc_tool') or request.path.startswith('/mapping_tool') or request.path.startswith('/notes_tool') or request.path.startswith('/annotation'):
-        return jsonify({"success": False, "message": f"發生錯誤，錯誤代碼：{error_code}"}), 500
-    return f"<script>alert('發生錯誤，錯誤代碼：{error_code}'); window.history.back();</script>", 500
+logging.basicConfig(level=logging.INFO,format="%(asctime)s | %(levelname)s | %(message)s",datefmt="%Y-%m-%d %H:%M:%S",)
 
-app.secret_key = "replace-with-a-secret-key"
-app.register_blueprint(auth_bp)
-app.register_blueprint(notes_bp)
-app.register_blueprint(bp_index)
-app.register_blueprint(bp_edit)
-app.register_blueprint(bp_docVersion)
-app.register_blueprint(bp_mapping)
-app.register_blueprint(bp_notes)
+def create_app():
+    app = Flask(__name__)
+    app.config.from_mapping(get_settings())
+    proxy_count = app.config["PROXY_COUNT"]
+    if proxy_count:
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=proxy_count, x_proto=proxy_count, x_host=proxy_count, x_port=proxy_count,)
 
-# 資料備份排程器 (設定為每天凌晨 2:00 執行備份)
-scheduler = BackgroundScheduler()
-scheduler.add_job(func=run_database_backup, trigger="cron", hour=2, minute=0, id='db_backup_job', replace_existing=True)
-scheduler.start()
-atexit.register(lambda: scheduler.shutdown())
-logging.info("APScheduler is running: Automatic database backup is performed daily at 02:00.")
+    @app.errorhandler(Exception)
+    def handle_exception(error):
+        if isinstance(error, HTTPException):
+            return error
+
+        error_code = str(uuid.uuid4()).split("-")[0]
+        traceback_text = traceback.format_exc()
+        endpoint = (request.endpoint or "system").replace(".", "_")
+        write_audit_log(
+            f"{endpoint}_error",
+            {
+                "error_code": error_code,
+                "error_type": type(error).__name__,
+                "message": str(error),
+                "traceback": traceback_text,
+                "path": request.path,
+                "method": request.method,
+            },
+            user_id=session.get("UserID"),
+        )
+        g.audit_error_logged = True
+        logging.error("Unhandled error %s\n%s", error_code, traceback_text)
+
+        api_prefixes = ("/admin/manage_user","/doc_tool","/mapping_tool","/notes_tool","/annotation",)
+        if request.path.startswith(api_prefixes):
+            return jsonify({"success": False, "message": f"系統錯誤，錯誤代碼：{error_code}"}), 500
+        return f"<script>alert('系統錯誤，錯誤代碼：{error_code}'); window.history.back();</script>", 500
+
+    @app.after_request
+    def write_request_audit_log(response):
+        if not getattr(g, "audit_error_logged", False):
+            return audit_request(response)
+        return response
+
+    @app.get("/health")
+    def health():
+        return jsonify({"status": "ok", "environment": app.config["APP_ENV"]})
+
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(notes_bp)
+    app.register_blueprint(bp_index)
+    app.register_blueprint(bp_edit)
+    app.register_blueprint(bp_docVersion)
+    app.register_blueprint(bp_mapping)
+    app.register_blueprint(bp_notes)
+
+    if app.config["ENABLE_SCHEDULER"]:
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(func=run_database_backup, trigger="cron", hour=2, minute=0, id="db_backup_job",replace_existing=True,)
+        scheduler.start()
+        app.extensions["backup_scheduler"] = scheduler
+        atexit.register(lambda: scheduler.shutdown(wait=False))
+        logging.info("Automatic database backup is scheduled daily at 02:00.")
+    return app
+
+app = create_app()
 
 if __name__ == "__main__":
-    flask_port = int(os.environ.get("FLASK_PORT"))
-    logging.info(f"Waitress server starting on port {flask_port}...")
-    serve(app, host="0.0.0.0", port=flask_port, threads=30)
+    if app.config["APP_ENV"] == "development":
+        app.run( host="0.0.0.0", port=50001, debug=app.config["DEBUG"],)
+    else:
+        logging.info("Waitress server starting on 0.0.0.0:50001")
+        serve(app,host="0.0.0.0",port=50001,threads=app.config["WAITRESS_THREADS"],trusted_proxy=app.config["TRUSTED_PROXY"],
+            trusted_proxy_headers={"x-forwarded-for","x-forwarded-host","x-forwarded-proto","x-forwarded-port",},
+            clear_untrusted_proxy_headers=True,)

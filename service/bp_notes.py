@@ -1,6 +1,7 @@
 import io
 import zipfile
 from flask import Blueprint, render_template, request, jsonify, send_file, session, send_from_directory, current_app
+from werkzeug.utils import secure_filename
 import os
 import uuid
 import shutil
@@ -92,6 +93,7 @@ def notes_page():
 
 
 @bp_notes.route("/annotation/migrate_pdf", methods=["POST"])
+@login_required
 def migrate_pdf_api():
     try:
         pdf_with_notes = request.files["old_pdf"]
@@ -127,7 +129,9 @@ def migrate_pdf_api():
         note_dir = os.path.join("tasks/note", TransferID if TransferID.startswith("note") else f"note{TransferID}")
         os.makedirs(note_dir, exist_ok=True)
         
-        original_filename = pdf_with_notes.filename
+        original_filename = secure_filename(pdf_with_notes.filename)
+        if not original_filename:
+            return jsonify({"status": "error", "message": "檔名無效"}), 400
         user_pdf_path = os.path.join(note_dir, original_filename)
         pdf_with_notes.save(user_pdf_path)
 
@@ -148,24 +152,19 @@ def migrate_pdf_api():
 @login_required
 def notes_action():
     if request.method == "GET":
+        user_id = session.get("ID")
         action = request.args.get("action")
         if action == "download_pdf":
             filename = request.args.get("filename")
-            transfer_id = request.args.get("transfer_id")
-            user_id = session.get("ID")
-            # Result filenames are reused for every transfer of the same PDF.
-            # Use the row's transfer ID from the download link so a new result
-            # cannot accidentally download an older file with the same name.
-            sql = """SELECT SourceFileName, TransferID FROM Hospital.dbo.NoteTransferHistory
-                     WHERE ResultName = ? AND TransferID = ? AND UserID = ?"""
-            result = execute_query(sql, (filename, transfer_id, user_id))
+            sql = """SELECT SourceFileName, TransferID FROM Hospital.dbo.NoteTransferHistory WHERE ResultName = ? AND UserID = ?"""
+            result = execute_query(sql, (filename, user_id))
 
             if result:
                 source_file_name = result[0]['SourceFileName']
                 transfer_id = result[0]['TransferID']
                 base_name = os.path.splitext(source_file_name)[0]
                 note_dir = os.path.join(current_app.root_path, "tasks/note", transfer_id if transfer_id.startswith("note") else f"note{transfer_id}")
-                download_name = filename if filename.startswith("Move_") else f"{base_name}_Move.pdf"
+                download_name = f"{base_name}_Move.pdf"
                 
                 return send_from_directory(note_dir, filename, as_attachment=True, download_name=download_name)
             return "File not found", 404
@@ -220,7 +219,7 @@ def notes_action():
                             result_name = res[0]['ResultName']
                             if result_name and result_name not in ['PROCESSING', 'ERROR']:
                                 base_name = os.path.splitext(source_file_name)[0]
-                                download_name = result_name if result_name.startswith("Move_") else f"{base_name}_Move.pdf"
+                                download_name = f"{base_name}_Move.pdf"
                                 note_dir = os.path.join(current_app.root_path, "tasks/note", tid if tid.startswith("note") else f"note{tid}")
                                 file_path = os.path.join(note_dir, result_name)
                                 if os.path.exists(file_path):
@@ -232,8 +231,8 @@ def notes_action():
 @bp_notes.route("/notes/status/<transfer_id>", methods=["GET"])
 @login_required
 def notes_status(transfer_id):
-    sql = "SELECT ResultName FROM Hospital.dbo.NoteTransferHistory WHERE TransferID = ?"
-    result = execute_query(sql, (transfer_id,))
+    sql = "SELECT ResultName FROM Hospital.dbo.NoteTransferHistory WHERE TransferID = ? AND UserID = ?"
+    result = execute_query(sql, (transfer_id, session.get("ID")))
     if result:
         return jsonify({"success": True, "ResultName": result[0]["ResultName"]})
     return jsonify({"success": False}), 404

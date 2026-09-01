@@ -6,10 +6,7 @@ import logging
 import fitz
 import pdfrw
 import pandas as pd
-from rapidfuzz import fuzz, process
-
-MANUAL_ADJUST_X = 0.0
-MANUAL_ADJUST_Y = 0.0
+from rapidfuzz import fuzz
 
 # 頁面章節/部位掃描與判定
 def get_pdf_sections(doc):
@@ -70,19 +67,8 @@ def get_word_score(w, annot_center, annot_rect):
         dist += 200  
     return dist
 
-def filtered_median(values, max_deviation=15):
-    if not values:
-        return 0
-    med = statistics.median(values)
-    filtered = [v for v in values if abs(v - med) < max_deviation]
-    return statistics.median(filtered) if filtered else med
-
 # 空間幾何與錨點比對定位
-def find_precise_offset(page_old, page_new, old_rect, processed_offsets, spans_cache=None,
-                        allow_group=True, prefer_context=False):
-    # FreeText must be located from its own surrounding document text.  Reusing a
-    # nearby annotation's movement is quick, but a note can sit beside a repeated
-    # label or a table row and then lands in the wrong place.
+def find_precise_offset(page_old, page_new, old_rect, processed_offsets, spans_cache=None,allow_group=True, prefer_context=False):
     if allow_group:
         for entry in processed_offsets:
             if len(entry) == 5:
@@ -197,10 +183,6 @@ def find_precise_offset(page_old, page_new, old_rect, processed_offsets, spans_c
 
     offsets_x = []
     offsets_y = []
-    # Keep all plausible movements for text notes.  The legacy path chooses the
-    # nearest occurrence of each word first; that is unreliable when a table has
-    # the same word in several rows.  Clustering all surrounding anchors lets the
-    # local sentence/row decide the movement instead.
     context_candidates = []
     new_texts = [nw[4].strip() for nw in words_new]
 
@@ -376,7 +358,6 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
         return None
 
     def local_context(page, rect, radius=16):
-        """Return nearby reading-order text for choosing between repeated hits."""
         words = page.get_text("words", sort=True)
         if not words:
             return ""
@@ -391,7 +372,6 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
         return "".join("".join(word[4].split()) for word in words[start:end])
 
     def row_context(page, rect):
-        """Return the text in the table row(s) occupied by an annotation."""
         vertical_padding = max(10, rect.height * 0.35)
         row_words = [
             word for word in page.get_text("words")
@@ -403,13 +383,7 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
     def hit_context_score(source_local, source_row, hit):
         target_local = local_context(page_new, hit)
         target_row = row_context(page_new, hit)
-        # In tables, the row signature includes the left-side code.  It is much
-        # stronger evidence than a repeated phrase in the definition column.
-        return (
-            fuzz.ratio(source_row, target_row) * 0.7 +
-            fuzz.ratio(source_local, target_local) * 0.2 +
-            fuzz.partial_ratio(source_local, target_local) * 0.1
-        )
+        return (fuzz.ratio(source_row, target_row) * 0.7 + fuzz.ratio(source_local, target_local) * 0.2 + fuzz.partial_ratio(source_local, target_local) * 0.1)
 
     def result_from_direct_hit(hit, exact_chars=None):
         new_h = page_new.rect.height
@@ -420,14 +394,6 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
             max(char[2] for char in old_covered), max(char[3] for char in old_covered)
         )
 
-        # A direct text match may cover several source QuadPoints.  Do not turn
-        # them into one large rectangle: derive individual target fragments from
-        # the target page's characters so gaps between separately highlighted
-        # lines (or columns) remain unhighlighted.
-        # For compact-text matches we already know the exact characters that
-        # formed the hit.  Using every character inside the hit's bounding box
-        # is wrong when a match wraps across rows: the bounding box also covers
-        # unrelated text between the two ends of the selection.
         if exact_chars is not None:
             matched_chars = list(exact_chars)
         else:
@@ -457,10 +423,7 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
             fragments = [[(hit.x0, hit.y0, hit.x1, hit.y1, "")]]
 
         target_rects = [
-            fitz.Rect(
-                min(char[0] for char in fragment), min(char[1] for char in fragment),
-                max(char[2] for char in fragment), max(char[3] for char in fragment)
-            )
+            fitz.Rect(min(char[0] for char in fragment), min(char[1] for char in fragment),max(char[2] for char in fragment), max(char[3] for char in fragment))
             for fragment in fragments
         ]
         quads = []
@@ -474,20 +437,9 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
         union_rect = target_rects[0]
         for rect in target_rects[1:]:
             union_rect |= rect
-        return (
-            quads,
-            [union_rect.x0, new_h - union_rect.y1, union_rect.x1, new_h - union_rect.y0],
-            [old_rect.x0, old_h - old_rect.y1, old_rect.x1, old_h - old_rect.y0]
-        )
+        return (quads,[union_rect.x0, new_h - union_rect.y1, union_rect.x1, new_h - union_rect.y0],[old_rect.x0, old_h - old_rect.y1, old_rect.x1, old_h - old_rect.y0])
 
     def group_direct_hits(hits):
-        """Merge adjacent search rectangles that belong to one text occurrence.
-
-        PyMuPDF may return a separate rectangle for each text span even when a
-        searched phrase appears only once.  Treating those spans as separate
-        occurrences makes the migration fall back to page-level alignment and
-        can send a highlight to a later repeated phrase on the same page.
-        """
         groups = []
         for hit in sorted(hits, key=lambda rect: (rect.y0, rect.x0)):
             if groups:
@@ -495,18 +447,11 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
                 same_line = abs(hit.y0 - previous.y0) <= 8 and abs(hit.y1 - previous.y1) <= 8
                 adjacent = hit.x0 <= previous.x1 + 30
                 if same_line and adjacent:
-                    # Rect's in-place union returns a new object in some
-                    # PyMuPDF versions, so update the list entry directly.
                     groups[-1] |= hit
                     continue
             groups.append(fitz.Rect(hit))
         return groups
 
-    # First search with the exact characters covered by QuadPoints.  Annotation
-    # rectangles commonly include neighbouring characters, so clipping by the
-    # rectangle can turn "首次治療前 3 個月內" into "案首次治療前 3 個月內所".
-    # Raw characters let us preserve the actual highlighted range while still
-    # matching PDFs that differ only in whitespace.
     compact_covered = "".join(old_chars[index][4] for index in covered_indices)
     new_chars = get_page_chars(page_new)
     compact_new = "".join(char[4] for char in new_chars)
@@ -530,8 +475,6 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
         hit, exact_chars = direct_matches[0]
         return result_from_direct_hit(hit, exact_chars)
     if len(direct_matches) > 1:
-        # Select repeated exact matches using the same surrounding-context
-        # evidence as literal searches, but keep the exact matched characters.
         source_context = local_context(page_old, old_rect_f)
         source_row = row_context(page_old, old_rect_f)
         source_x = (old_rect_f.x0 + old_rect_f.x1) / 2 / max(page_old.rect.width, 1)
@@ -548,9 +491,6 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
             _, _, hit, exact_chars = scored_matches[0]
             return result_from_direct_hit(hit, exact_chars)
 
-    # Fall back to literal PDF search when the exact marked characters changed.
-    # Preserve spaces here: the upper occurrence may contain spaces whereas a
-    # lower repeated occurrence does not.
     covered_text = page_old.get_text("text", clip=old_rect_f).strip()
     if not covered_text:
         covered_text = compact_covered
@@ -564,9 +504,6 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
     if len(direct_hits) == 1:
         return result_from_direct_hit(direct_hits[0])
     if len(direct_hits) > 1:
-        # Repeated phrases such as "後續追蹤或治療" must not be chosen by
-        # vertical position alone.  Compare the surrounding sentence/table row
-        # and use the hit with clearly stronger local context.
         source_context = local_context(page_old, old_rect_f)
         source_row = row_context(page_old, old_rect_f)
         source_x = (old_rect_f.x0 + old_rect_f.x1) / 2 / max(page_old.rect.width, 1)
@@ -576,8 +513,6 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
             context_score = hit_context_score(source_context, source_row, hit)
             hit_x = (hit.x0 + hit.x1) / 2 / max(page_new.rect.width, 1)
             hit_y = (hit.y0 + hit.y1) / 2 / max(page_new.rect.height, 1)
-            # Context identifies the row; normalized coordinates resolve a tie
-            # when the same wording appears in otherwise similar rows.
             position_penalty = 45 * abs(hit_y - source_y) + 12 * abs(hit_x - source_x)
             scored_hits.append((context_score - position_penalty, context_score, hit))
 
@@ -585,14 +520,7 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
         if scored_hits and scored_hits[0][1] >= 60:
             return result_from_direct_hit(scored_hits[0][2])
 
-    # A revised manual can slightly change a marked expression (for example,
-    # "緩和治療" to "緩和性手術").  If the full phrase disappeared, search its
-    # longest surviving fragments and accept one only when the surrounding row
-    # strongly agrees with the old annotation's context.
     normalized_covered = "".join(covered_text.split())
-    # Limit this fallback to genuinely short changed labels.  Enumerating every
-    # substring of a long highlighted sentence causes a prohibitive number of PDF
-    # searches on large manuals.
     if not direct_hits and 4 <= len(normalized_covered) <= 12:
         source_context = local_context(page_old, old_rect_f)
         source_row = row_context(page_old, old_rect_f)
@@ -643,15 +571,9 @@ def find_text_based_position(page_old, page_new, old_rect_f, rawdict_cache=None,
 
     old_norm_str, old_index_map = build_normalized_mapping(old_chars)
     new_norm_str, new_index_map = build_normalized_mapping(new_chars)
-
     covered_norm_indices = [i for i, x in enumerate(old_index_map) if x in covered_indices]
     mapped_norm_indices = []
 
-    # A highlight often covers only a short word (for example, a status code in a
-    # table).  That word may occur many times on the new page.  First locate it
-    # through a unique surrounding text window, then keep only the characters at
-    # the original offset inside that window.  This is more reliable than a
-    # full-page alignment for repeated words.
     if covered_norm_indices:
         window_start = max(0, min(covered_norm_indices) - 24)
         window_end = min(len(old_norm_str), max(covered_norm_indices) + 25)
@@ -802,12 +724,6 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
     spans_cache = {}
 
     def find_same_row_reference(note_rect, processed_offsets):
-        """Return a direct annotation movement from the same visual row.
-
-        A typed note is often placed to the right of a highlighted code or phrase.
-        The rectangles do not overlap horizontally, so ordinary intersection and
-        nearby-group checks miss this relationship.
-        """
         candidates = []
         for entry in processed_offsets:
             if len(entry) != 5:
@@ -815,66 +731,36 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             reference_rect, dx, dy, target_idx, is_direct = entry
             if not is_direct:
                 continue
-            vertical_gap = max(
-                reference_rect.y0 - note_rect.y1,
-                note_rect.y0 - reference_rect.y1,
-                0
-            )
+            vertical_gap = max(reference_rect.y0 - note_rect.y1,note_rect.y0 - reference_rect.y1,0)
             if vertical_gap > 14:
                 continue
-            center_gap = abs(
-                (reference_rect.y0 + reference_rect.y1) / 2 -
-                (note_rect.y0 + note_rect.y1) / 2
-            )
-            horizontal_gap = max(
-                reference_rect.x0 - note_rect.x1,
-                note_rect.x0 - reference_rect.x1,
-                0
-            )
-            candidates.append((vertical_gap * 100 + center_gap * 10 + horizontal_gap * 0.01,
-                               dx, dy, target_idx))
+            center_gap = abs((reference_rect.y0 + reference_rect.y1) / 2 -(note_rect.y0 + note_rect.y1) / 2)
+            horizontal_gap = max(reference_rect.x0 - note_rect.x1,note_rect.x0 - reference_rect.x1,0)
+            candidates.append((vertical_gap * 100 + center_gap * 10 + horizontal_gap * 0.01,dx, dy, target_idx))
         if not candidates:
             return None
         _, dx, dy, target_idx = min(candidates, key=lambda item: item[0])
         return dx, dy, target_idx
 
     def find_code_row_anchor(old_page, note_rect, mapped_new_idx, old_section):
-        """Move a typed side note with the nearest table-code row.
-
-        FreeText outside a frame has no reliable text in the PDF content stream.
-        In manuals it is commonly written beside a 3-digit table code, so that
-        row is a stronger anchor than another annotation elsewhere on the page.
-        """
         candidates = []
-        # A table code is a reliable anchor only when it is genuinely on the
-        # note's row.  A code one or two rows away can incorrectly pull a
-        # paragraph-style typed note to a different location on the page.
         max_gap = 10
         for word in old_page.get_text("words", sort=True):
             code_rect = fitz.Rect(word[:4])
             codes = re.findall(r"(?<!\d)\d{3}(?!\d)", word[4])
-            # A number is a row anchor only when it is in the document's left
-            # code column.  Numbers embedded in paragraph text must not move a
-            # nearby typed note.
             if (not codes or code_rect.x1 > note_rect.x0 + 20 or
                     code_rect.x0 > old_page.rect.width * .30):
                 continue
             vertical_gap = max(code_rect.y0 - note_rect.y1, note_rect.y0 - code_rect.y1, 0)
             if vertical_gap > max_gap:
                 continue
-            center_gap = abs(
-                (code_rect.y0 + code_rect.y1) / 2 -
-                (note_rect.y0 + note_rect.y1) / 2
-            )
+            center_gap = abs((code_rect.y0 + code_rect.y1) / 2 - (note_rect.y0 + note_rect.y1) / 2)
             candidates.append((vertical_gap * 100 + center_gap, codes[0], code_rect))
         if not candidates:
             return None
         _, code, source_rect = min(candidates, key=lambda item: item[0])
 
         target_candidates = []
-        # A typed note has no text of its own to prove that it belongs on an
-        # adjacent page.  Prefer the CSV-mapped page's code row; matching the
-        # same three-digit code on a neighbour is a common false positive.
         for offset in [0]:
             target_idx = mapped_new_idx + offset
             if not (0 <= target_idx < len(doc_new)):
@@ -895,12 +781,10 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             return None
         _, _, target_idx, target_rect = min(target_candidates, key=lambda item: (item[0], item[1]))
         dx = target_rect.x0 - source_rect.x0
-        dy = ((target_rect.y0 + target_rect.y1) -
-              (source_rect.y0 + source_rect.y1)) / 2
+        dy = ((target_rect.y0 + target_rect.y1) - (source_rect.y0 + source_rect.y1)) / 2
         return dx, dy, target_idx
 
     def annotation_context(page, annotation_rect, radius=4):
-        """Build a small, local text fingerprint around an annotation."""
         words = page.get_text("words", sort=True)
         if not words:
             return ""
@@ -913,16 +797,12 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                       (annotation_rect.y0 + annotation_rect.y1) / 2)
             touched = [min(
                 range(len(words)),
-                key=lambda index: (
-                    (words[index][0] + words[index][2]) / 2 - center[0]
-                ) ** 2 + ((words[index][1] + words[index][3]) / 2 - center[1]) ** 2
-            )]
+                key=lambda index: ((words[index][0] + words[index][2]) / 2 - center[0]) ** 2 + ((words[index][1] + words[index][3]) / 2 - center[1]) ** 2)]
         start = max(0, min(touched) - radius)
         end = min(len(words), max(touched) + radius + 1)
         return "".join("".join(word[4].split()) for word in words[start:end])
 
     def context_score(old_page, old_rect, new_page):
-        """Score a candidate page by the annotation's surrounding sentence/row."""
         context = annotation_context(old_page, old_rect)
         if len(context) < 6:
             return 0
@@ -930,37 +810,15 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
         occurrences = candidate.count(context)
         if occurrences == 1:
             return 1000 + len(context)
-        # Text can change slightly across versions; retain a soft signal when an
-        # exact context is unavailable, without allowing a repeated short word to
-        # dominate the decision.
         return fuzz.partial_ratio(context, candidate)
 
     def find_best_text_match(old_page, mapped_new_idx, old_rect, old_quadpoints, old_section,
                              allow_neighbors):
-        """Find an annotation's text on the mapped page or its nearby spill-over pages.
 
-        A document revision can move the content of one old page across several new
-        pages.  Do not stop at the CSV's page mapping just because it contains a
-        plausible match: compare every nearby candidate and prefer the strongest
-        text match.  The CSV mapping remains the tie-breaker, so repeated labels
-        do not needlessly jump to another page.
-        """
         source_text = old_page.get_text("text", clip=old_rect).strip().replace("\n", "")
         source_text = "".join(c for c in source_text if c.strip() and c not in ['\uf09f', '\u2022'])
-
-        # The CSV page mapping is normally the correct page.  In a page where
-        # several notes already land correctly, letting one annotation compare
-        # every neighbouring page can make a repeated phrase look marginally
-        # better on the next page and move only that note away from its peers.
-        # Therefore a real text position on the mapped page wins immediately;
-        # neighbouring pages are a fallback only when the text is absent there.
-        if 0 <= mapped_new_idx < len(doc_new) and sections_match(
-            old_section, new_sections[mapped_new_idx]
-        ):
-            primary_result = find_text_based_position(
-                old_page, doc_new[mapped_new_idx], old_rect,
-                rawdict_cache, words_cache, old_quadpoints
-            )
+        if 0 <= mapped_new_idx < len(doc_new) and sections_match(old_section, new_sections[mapped_new_idx]):
+            primary_result = find_text_based_position(old_page, doc_new[mapped_new_idx], old_rect,rawdict_cache, words_cache, old_quadpoints)
             if primary_result:
                 return primary_result, mapped_new_idx
 
@@ -973,31 +831,18 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             if not sections_match(old_section, new_sections[candidate_idx]):
                 continue
 
-            result = find_text_based_position(
-                old_page, doc_new[candidate_idx], old_rect,
-                rawdict_cache, words_cache, old_quadpoints
-            )
+            result = find_text_based_position(old_page, doc_new[candidate_idx], old_rect,rawdict_cache, words_cache, old_quadpoints)
             if not result:
                 continue
 
             candidate_text = "".join(doc_new[candidate_idx].get_text("text").split())
-            # Local context has much more weight than the short highlighted word.
-            # It lets an old page's overflow content correctly choose the preceding
-            # or following new page when a revision changes pagination.
-            score = (
-                context_score(old_page, old_rect, doc_new[candidate_idx]) * 10 +
-                fuzz.partial_ratio(source_text, candidate_text) - abs(offset) * 1.5
-            )
+            score = (context_score(old_page, old_rect, doc_new[candidate_idx]) * 10 + fuzz.partial_ratio(source_text, candidate_text) - abs(offset) * 1.5)
             if score > best_score:
                 best_result, best_idx, best_score = result, candidate_idx, score
 
         return best_result, best_idx
 
     def split_multi_item_square(old_page, old_rect, mapped_new_idx, old_section):
-        """Map a multi-row rectangular annotation into one rectangle per new page."""
-        # Do not apply this specialised flow to ordinary small boxes or thin
-        # line-like rectangles.  Those are single annotations and must retain the
-        # existing transfer behaviour.
         if old_rect.width < 200 or old_rect.height < 100:
             return []
         source_items = []
@@ -1006,8 +851,6 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             word_rect = fitz.Rect(word[:4])
             if not old_rect.intersects(word_rect):
                 continue
-            # Item identifiers live in the left code column.  Numbers in the
-            # explanatory text (for example, 100-107) are not separate items.
             if word_rect.x0 > old_rect.x0 + old_rect.width * 0.3:
                 continue
             for code in re.findall(r"(?<!\d)\d{3}(?!\d)", word[4]):
@@ -1015,8 +858,6 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 if key not in seen:
                     source_items.append({"code": code, "rect": word_rect})
                     seen.add(key)
-        # Narrative examples can still be inside the wide frame.  The genuine
-        # item IDs share one narrow, left-most code column.
         if source_items:
             code_column_x = min(item["rect"].x0 for item in source_items)
             source_items = [
@@ -1048,22 +889,12 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             if candidates:
                 candidates.sort(key=lambda candidate: (abs(candidate[0] - mapped_new_idx), candidate[1]))
                 target_idx, _, target_rect = candidates[0]
-                mapped_items.append({
-                    **item, "source_index": source_index,
-                    "target_idx": target_idx, "target_rect": target_rect
-                })
+                mapped_items.append({**item, "source_index": source_index,"target_idx": target_idx, "target_rect": target_rect})
 
-        # A wide frame can also contain numbers from explanatory text.  Keep only
-        # the consecutive code-column rows that can actually be located nearby in
-        # the new document.  This is more reliable than abandoning the whole
-        # split because a non-item number has no match.
         if len(mapped_items) < 4:
             return []
 
         target_sequence = [item["target_idx"] for item in mapped_items]
-        # A real pagination split progresses monotonically through the new PDF.
-        # Alternating target pages means a repeated code was ambiguous, so it is
-        # safer to keep the original single-box behaviour than draw overlaps.
         if any(current < previous for previous, current in zip(target_sequence, target_sequence[1:])):
             return []
 
@@ -1074,8 +905,6 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             else:
                 groups[-1].append(item)
 
-        # Split only when this is confidently a cross-page multi-item box.  This
-        # prevents extra boxes and apparent bold borders on ordinary annotations.
         if len(groups) < 2 or len(groups) > 3 or any(len(group) < 2 for group in groups):
             return []
 
@@ -1087,13 +916,7 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             source_last = group[-1]
             first_index = source_first["source_index"]
             last_index = source_last["source_index"]
-
-            # Preserve the original horizontal span, adjusted by the code-column
-            # shift.  Vertically, expand to the next item boundary so each new
-            # rectangle contains the complete table rows on that page.
-            x_shift = statistics.median(
-                item["target_rect"].x0 - item["rect"].x0 for item in group
-            )
+            x_shift = statistics.median(item["target_rect"].x0 - item["rect"].x0 for item in group)
             x0 = max(0, old_rect.x0 + x_shift)
             x1 = min(target_page.rect.width, old_rect.x1 + x_shift)
             top_pad = (source_first["rect"].y0 - old_rect.y0 if first_index == 0
@@ -1102,9 +925,6 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
 
             next_group_item = (groups[group_index + 1][0]
                                if group_index + 1 < len(groups) else None)
-            # Do not extend a split frame to the page bottom: after a page break
-            # that produced a visually oversized box.  Use one half-row below
-            # the final code, capped by the source frame's original bottom pad.
             row_gaps = [
                 source_items[index + 1]["rect"].y0 - source_items[index]["rect"].y1
                 for index in range(first_index, min(last_index + 1, len(source_items) - 1))
@@ -1117,19 +937,14 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
         return rectangles
 
     def split_code_column_line(old_page, old_rect, mapped_new_idx, old_section):
-        """Split a vertical line by the code rows it marks across page breaks."""
         if old_rect.height < 60 or old_rect.width > 20:
             return []
         line_x = (old_rect.x0 + old_rect.x1) / 2
         source_items = []
         for word in old_page.get_text("words", sort=True):
             word_rect = fitz.Rect(word[:4])
-            # Do not pull the first code of the next table section into the
-            # line merely because its glyph slightly touches the line's Rect.
             if word_rect.y1 < old_rect.y0 - 2 or word_rect.y0 > old_rect.y1 + 2:
                 continue
-            # The line is drawn through / immediately beside the three-digit
-            # code, so ignore narrative text further away on the same row.
             if not (word_rect.x0 - 12 <= line_x <= word_rect.x1 + 12):
                 continue
             for code in re.findall(r"(?<!\d)\d{3}(?!\d)", word[4]):
@@ -1140,9 +955,6 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 item for item in source_items
                 if abs(item["rect"].x0 - code_column_x) <= 12
             ]
-            # A vertical separator normally marks one code family (for example
-            # 500-532).  Do not let the next 6xx section lengthen that same
-            # separator merely because it happens to be in the nearby column.
             prefix_counts = {}
             for item in source_items:
                 prefix_counts[item["code"][0]] = prefix_counts.get(item["code"][0], 0) + 1
@@ -1188,9 +1000,6 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 groups.append([item])
             else:
                 groups[-1].append(item)
-        # A line may stay on one page after reflow.  It still benefits from being
-        # rebuilt from its marked code rows instead of receiving a page-level
-        # translation.  Split only when the rows genuinely land on more pages.
         if len(groups) > 3 or any(len(group) < 2 for group in groups):
             return []
 
@@ -1198,8 +1007,6 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
         for group in groups:
             target_idx = group[0]["target_idx"]
             target_page = doc_new[target_idx]
-            # Preserve the line's position inside the code (for example, to the
-            # right of the leading "5"), not merely its absolute page x value.
             x_offsets = [line_x - item["rect"].x0 for item in group]
             x = statistics.median(item["target_rect"].x0 for item in group) + statistics.median(x_offsets)
             y0 = min(item["target_rect"].y0 for item in group) - 4
@@ -1209,13 +1016,6 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
         return lines
 
     def align_vertical_line_by_nearby_codes(old_page, old_rect, mapped_new_idx, old_section):
-        """Rebuild a vertical line from nearby table codes.
-
-        This conservative fallback is used when the stricter split logic cannot
-        classify a mixed code family.  Each destination page needs at least two
-        matching code rows, so an unanchored line is never moved merely because
-        one repeated number happens to exist on another page.
-        """
         if old_rect.height < 60 or old_rect.width > 20:
             return []
 
@@ -1265,7 +1065,6 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
         return sorted(lines, key=lambda item: item[0])
 
     def align_horizontal_line(old_page, old_rect, mapped_new_idx, old_section):
-        """Place a horizontal divider from the text rows immediately around it."""
         if old_rect.width < 120 or old_rect.height > 20:
             return None
         line_y = (old_rect.y0 + old_rect.y1) / 2
@@ -1295,8 +1094,6 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 hits = target_page.search_for(text)
                 if not hits:
                     continue
-                # A divider usually spans a whole table; choose the occurrence
-                # preserving the anchor's horizontal column.
                 expected_x = source_rect.x0 / max(old_page.rect.width, 1) * target_page.rect.width
                 hit = min(hits, key=lambda candidate: abs(candidate.x0 - expected_x))
                 if abs(hit.x0 - expected_x) > target_page.rect.width * .18:
@@ -1308,22 +1105,13 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
         if not page_votes:
             return None
 
-        target_idx = max(
-            page_votes,
-            key=lambda index: (page_votes[index], -abs(index - mapped_new_idx))
-        )
-        # One matched label is too weak for a broad divider and risks snapping it
-        # to an unrelated repeated phrase.
+        target_idx = max(page_votes,key=lambda index: (page_votes[index], -abs(index - mapped_new_idx)))
         if page_votes[target_idx] < 2:
             return None
         target_page = doc_new[target_idx]
         dy = statistics.median(page_offsets[target_idx])
         y = min(max(0, line_y + dy), target_page.rect.height)
-        return (
-            target_idx,
-            fitz.Point(old_rect.x0 / old_page.rect.width * target_page.rect.width, y),
-            fitz.Point(old_rect.x1 / old_page.rect.width * target_page.rect.width, y)
-        )
+        return (target_idx,fitz.Point(old_rect.x0 / old_page.rect.width * target_page.rect.width, y),fitz.Point(old_rect.x1 / old_page.rect.width * target_page.rect.width, y))
 
     for old_idx, new_idx in mapping.items():
         if old_idx >= len(doc_old) or new_idx >= len(doc_new): continue
@@ -1332,12 +1120,10 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
 
         annots = reader_old.pages[old_idx].Annots
         if not annots: continue
-        # CSV provides the starting page; the annotation's local context chooses
-        # among that page and nearby overflow pages.
         allow_neighbors = True
 
-        # 第一階段：預掃描本頁的所有文字型筆記，搜集投票錨點
-        voting_anchors = [] # 儲存格式：(matched_idx, y_center, weight)
+        # 第一階段：預掃描本頁的所有文字型筆記，蒐集投票錨點。
+        voting_anchors = []  # 儲存格式：(matched_idx, weight)
         old_h = p_old_f.rect.height
         for annot in annots:
             if not annot.get('/Rect'): continue
@@ -1345,8 +1131,6 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             if subtype in ['/Highlight', '/Underline', '/StrikeOut', '/Squiggly', '/Square', '/Circle', '/Redact', '/Text']:
                 r = [float(x) for x in annot['/Rect']]
                 old_rect_f = fitz.Rect(r[0], old_h - r[3], r[2], old_h - r[1])
-                y_center = (old_rect_f.y0 + old_rect_f.y1) / 2
-
                 # 取得文字長度，忽略短字以防噪訊影響投票
                 annot_text = p_old_f.get_text("text", clip=old_rect_f).strip().replace('\n', '')
                 annot_text_clean = "".join([c for c in annot_text if c.strip() and c not in ['\uf09f', '\u2022']])
@@ -1355,22 +1139,16 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                     continue # 忽略小於 6 字的短標記參與投票
                 
                 old_quadpoints = annot.get(PN('QuadPoints'))
-                text_result, matched_idx = find_best_text_match(
-                    p_old_f, new_idx, old_rect_f, old_quadpoints, old_sections[old_idx],
-                    allow_neighbors
-                )
+                text_result, matched_idx = find_best_text_match(p_old_f, new_idx, old_rect_f, old_quadpoints, old_sections[old_idx],allow_neighbors)
                 if text_result:
-                    voting_anchors.append((matched_idx, y_center, weight))
+                    voting_anchors.append((matched_idx, weight))
 
-        # A CSV match can be one page off around a revision's page break.  Let
-        # several independently matched annotations correct that *page-level*
-        # choice, rather than allowing each annotation to jump separately.  A
-        # single match is deliberately not enough to override the CSV.
+
         consensus_new_idx = new_idx
         if voting_anchors:
             vote_weight = {}
             vote_count = {}
-            for matched_idx, _, weight in voting_anchors:
+            for matched_idx, weight in voting_anchors:
                 vote_weight[matched_idx] = vote_weight.get(matched_idx, 0) + weight
                 vote_count[matched_idx] = vote_count.get(matched_idx, 0) + 1
             best_vote_idx = max(
@@ -1389,8 +1167,6 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
             r = [float(x) for x in annot['/Rect']]
             old_h = p_old_f.rect.height
             old_rect_f = fitz.Rect(r[0], old_h - r[3], r[2], old_h - r[1])
-            y_center = (old_rect_f.y0 + old_rect_f.y1) / 2
-
             if subtype == '/Square':
                 split_rectangles = split_multi_item_square(
                     p_old_f, old_rect_f, new_idx, old_sections[old_idx]
@@ -1398,8 +1174,6 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                 if split_rectangles:
                     for target_idx, target_rect in split_rectangles:
                         target_page = reader_new.pages[target_idx]
-                        # pdfrw annotation objects cannot be copied with
-                        # copy.copy() (their __setstate__ is None).
                         split_annot = pdfrw.PdfDict(annot)
                         page_height = doc_new[target_idx].rect.height
                         split_annot.Rect = pdfrw.PdfArray([
@@ -1432,18 +1206,8 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                     for target_idx, start, end in split_lines:
                         target_page = reader_new.pages[target_idx]
                         split_annot = pdfrw.PdfDict(annot)
-                        # Each segment must be a distinct PDF object.  Keeping
-                        # the source annotation's indirect reference lets the
-                        # writer collapse split line segments back into one,
-                        # which is why a line spanning two new pages vanished
-                        # or appeared on the wrong page.
                         split_annot.indirect = True
                         page_height = doc_new[target_idx].rect.height
-                        # A line's old appearance stream contains drawing
-                        # commands at its former coordinates.  Some viewers keep
-                        # showing that cached stream until the annotation is
-                        # clicked.  Remove it so the moved /L is rendered on the
-                        # first open.
                         for key in ['/AP', '/RD', '/BE']:
                             if split_annot.get(key):
                                 del split_annot[key]
@@ -1453,9 +1217,7 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                             pdfrw.PdfObject(f"{end.x:.4f}"),
                             pdfrw.PdfObject(f"{page_height - end.y:.4f}")
                         ])
-                        # Keep a non-zero rectangle around a vertical line.  A
-                        # zero-width /Rect is legal in practice but commonly
-                        # gets culled by PDF viewers until they redraw it.
+
                         rect_pad = max(1.5, abs(end.x - start.x) / 2 + 0.5)
                         split_annot.Rect = pdfrw.PdfArray([
                             pdfrw.PdfObject(f"{min(start.x, end.x) - rect_pad:.4f}"),
@@ -1470,19 +1232,8 @@ def migrate_all_to_pdf(old_pdf, new_pdf, csv_mapping, output_pdf, diff_pages_str
                         target_page.Annots.append(split_annot)
                     continue
 
-            # 使用距離權重局部共識決定當前標記的基準對應頁面
+            # 使用本頁文字標記的共識決定當前標記的基準對應頁面。
             local_new_idx = consensus_new_idx
-            # Do not preemptively switch pages from nearby annotations.  Each
-            # annotation first checks its CSV-mapped page, then falls back to a
-            # neighbour only if its own text is absent there.
-            if False and allow_neighbors and voting_anchors:
-                page_scores = {}
-                for matched_idx, v_y, weight in voting_anchors:
-                    dist = abs(y_center - v_y)
-                    # 權重與距離成反比，加入 50.0 的平滑值防止除以零且平衡近鄰影響
-                    score = weight / (dist + 50.0)
-                    page_scores[matched_idx] = page_scores.get(matched_idx, 0.0) + score
-                local_new_idx = max(page_scores, key=page_scores.get)
 
             p_new_f = doc_new[local_new_idx]
             p_new_p = reader_new.pages[local_new_idx]

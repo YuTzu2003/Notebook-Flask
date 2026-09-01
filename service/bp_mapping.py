@@ -14,6 +14,7 @@ Mapping_Folder = "tasks/docMapResult"
 Note_Folder = 'tasks/note'
 
 @bp_mapping.route("/mapping", methods=["GET"])
+@login_required
 def mapping_page():
     sql = "SELECT ID,FileName,Version FROM DocVersion ORDER BY UploadTime DESC"
     docVersion = execute_query(sql)
@@ -126,6 +127,7 @@ def run_mapping_background(app, record_id, old_pdf_path, new_pdf_path, csv_resul
             mapping_semaphore.release()
 
 @bp_mapping.route("/mapping/doc_mapping", methods=["POST"])
+@login_required
 def doc_mapping():
     old_id = request.form.get("old_pdf_id")
     new_id = request.form.get("new_pdf_id")

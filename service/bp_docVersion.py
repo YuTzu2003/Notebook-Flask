@@ -3,11 +3,13 @@ import os
 import uuid
 import fitz
 from modules.db import execute_query
+from modules.auth import login_required
 
 bp_docVersion = Blueprint('bp_docVersion', __name__)
 VERSION_Folder = 'tasks/docVersion'
 
 @bp_docVersion.route('/docVersion', methods=['GET', 'POST'])
+@login_required
 def docVersion():
     if request.method == 'POST':
         if 'file' not in request.files:
@@ -44,6 +46,8 @@ def docVersion():
             flash('新增失敗！', 'error')
         return redirect(request.url)
     sort_by = request.args.get('sort_by', 'UploadTime')
+    if sort_by not in {'UploadTime', 'FileName', 'Version', 'Author'}:
+        sort_by = 'UploadTime'
     sql = f"""SELECT dbo.DocVersion.*, dbo.Users.Name FROM dbo.DocVersion INNER JOIN dbo.Users ON dbo.DocVersion.Uploader = dbo.Users.ID ORDER BY {sort_by} ASC"""
     documents = execute_query(sql)
     return render_template('docVersion.html', documents=documents, current_sort=sort_by)
@@ -51,6 +55,7 @@ def docVersion():
 
 @bp_docVersion.route('/docVersion_tool/<action>', defaults={'doc_id': None}, methods=['GET', 'POST'])
 @bp_docVersion.route('/docVersion_tool/<action>/<doc_id>', methods=['GET', 'POST'])
+@login_required
 def docVersion_tool(action, doc_id):
     if action == 'download':
         sql = "SELECT FileName FROM DocVersion WHERE ID = ?"

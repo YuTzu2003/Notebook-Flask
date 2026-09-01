@@ -14,9 +14,19 @@ NOTE_Folder = "tasks/annotation"
 @login_required
 def index():
     user_id = session.get("ID")
-    sql = """SELECT DocID, OriginalName, UploadTime, Pages FROM Documents  WHERE User_ID = ? ORDER BY UploadTime DESC"""
-    documents = execute_query(sql, (user_id,))
-    return render_template("index.html", documents=documents)
+    sql_history = """SELECT TOP 10 H.TransferID, H.SourceFileName,H.ResultName,H.CreateTime,V_Old.Version AS OldV, V_New.Version AS NewV
+                    FROM Hospital.dbo.NoteTransferHistory H
+                    LEFT JOIN MappingRecord M ON H.MappingID = M.RecordID
+                    LEFT JOIN DocVersion V_Old ON M.OldDocID = V_Old.ID
+                    LEFT JOIN DocVersion V_New ON M.NewDocID = V_New.ID
+                    WHERE H.UserID = ?
+                    ORDER BY H.CreateTime DESC"""
+    transfer_records = execute_query(sql_history, (user_id,))
+    
+    sql_docs = "SELECT * FROM Documents WHERE User_ID = ? ORDER BY UploadTime DESC"
+    documents = execute_query(sql_docs, (user_id,))
+    
+    return render_template("index.html", transfer_records=transfer_records, documents=documents)
 
 @bp_index.route("/doc_tool", methods=["POST"])
 @login_required

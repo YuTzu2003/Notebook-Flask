@@ -17,8 +17,8 @@ wheels/
 *.json
 *.env
 *.xlsx
-tmp/
+*.pptx
 
-AGENTS.md
 CLAUDE.md
+AGENTS.md
 GEMINI.md
