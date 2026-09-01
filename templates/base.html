@@ -14,8 +14,8 @@
 </head>
 <body>
 
-    <nav class="navbar navbar-expand-lg fixed-top {{ 'navbar-admin navbar-dark' if session.get('Position') == 'Admin' else 'navbar-light' }}">
-        <div class="container-fluid px-md-5">
+    <nav class="navbar navbar-expand-lg fixed-top shadow-sm {{ 'navbar-admin navbar-dark' if session.get('Position') == 'Admin' else 'navbar-light' }}">
+        <div class="container-fluid px-4 px-lg-5 mx-xl-3">
             <a class="navbar-brand d-flex align-items-center gap-2" href="/">
                 <h5 class="m-0 fw-bold {{ 'text-white' if session.get('Position') == 'Admin' else 'text-dark' }}">
                     <img src="/static/logo.png" alt="logo" style="height: 40px;"> PDF做筆記
@@ -108,11 +108,18 @@
     <script>
         function loadNotifs() {
             let notifs = JSON.parse(localStorage.getItem('sys_notifications') || '[]');
+            let readCount = parseInt(localStorage.getItem('sys_notifs_read_count') || '0');
             const badge = document.getElementById('notifBadge');
             const items = document.getElementById('notifItems');
             
             if (notifs.length > 0) {
-                if (badge) badge.classList.remove('d-none');
+                if (badge) {
+                    if (notifs.length > readCount) {
+                        badge.classList.remove('d-none');
+                    } else {
+                        badge.classList.add('d-none');
+                    }
+                }
                 if (items) {
                     items.innerHTML = '';
                     [...notifs].reverse().forEach(n => {
@@ -140,6 +147,7 @@
         
         function clearNotifs() {
             localStorage.removeItem('sys_notifications');
+            localStorage.setItem('sys_notifs_read_count', '0');
             loadNotifs();
         }
         
@@ -156,7 +164,17 @@
             loadNotifs();
         }
         
-        document.addEventListener("DOMContentLoaded", loadNotifs);
+        document.addEventListener("DOMContentLoaded", function() {
+            loadNotifs();
+            const notifDropdown = document.getElementById('notifDropdown');
+            if (notifDropdown) {
+                notifDropdown.addEventListener('show.bs.dropdown', function () {
+                    let notifs = JSON.parse(localStorage.getItem('sys_notifications') || '[]');
+                    localStorage.setItem('sys_notifs_read_count', notifs.length);
+                    document.getElementById('notifBadge').classList.add('d-none');
+                });
+            }
+        });
 
         // Global Background Task Polling (Optimized to save resources)
         async function checkTasks() {

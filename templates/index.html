@@ -1,120 +1,94 @@
 {% extends "base.html" %}
-{% block title %}首頁 - PDF做筆記{% endblock %}
+{% block title %}首頁 - PDF筆記轉移{% endblock %}
 {% block extra_css %}
     <link rel="stylesheet" href="/static/css/index.css">
 {% endblock %}
 
 {% block content %}
-    <div class="container" style="margin-top: 80px;">
-        <div class="hero-section mb-5">
-            <div class="row align-items-center g-4">
-                <div class="col-lg-7">
-                    <div class="badge bg-primary bg-opacity-10 text-primary px-3 py-1 rounded-pill mb-3 fw-bold small">
-                        專為醫療癌症登記手冊更新優化
-                    </div>
-                    <h2 class="fw-bold text-dark mb-2">PDF 筆記轉移與製作</h2>
-                    <p class="text-muted mb-4 pe-lg-5 small">
-                        專為「癌登手冊」版本更新設計。<br> 自動識別文件變動，將您的筆記遷移至新版，並支援線上書籤與筆記製作。
-                    </p>
-                    <div class="row g-3">
-                        <div class="col-md-4 col-sm-6">
-                            <div class="d-flex align-items-center gap-2">
-                                <i class="bi bi-arrow-repeat text-primary"></i>
-                                <span class="small fw-bold">筆記轉移</span>
-                            </div>
-                        </div>
-                        <div class="col-md-4 col-sm-6">
-                            <div class="d-flex align-items-center gap-2">
-                                <i class="bi bi-search text-success"></i>
-                                <span class="small fw-bold">內容比對</span>
-                            </div>
-                        </div>
-                        <div class="col-md-4 col-sm-6">
-                            <div class="d-flex align-items-center gap-2">
-                                <i class="bi bi-pencil-square text-info"></i>
-                                <span class="small fw-bold">線上筆記製作</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-lg-5">
-                    <div class="usage-steps-card card p-3 border-0 shadow-sm">
-                        <h6 class="fw-bold mb-3 d-flex align-items-center">快速開始指南</h6>
-                        <div class="steps-timeline small">
-                            <div class="step-item d-flex mb-3">
-                                <div class="step-num">01</div>
-                                <div class="ms-2">上傳 PDF 版本庫管理</div>
-                            </div>
-                            <div class="step-item d-flex mb-3">
-                                <div class="step-num">02</div>
-                                <div class="ms-2">執行新舊版智慧比對</div>
-                            </div>
-                            <div class="step-item d-flex">
-                                <div class="step-num">03</div>
-                                <div class="ms-2">生成新版筆記文件</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+<main class="home-page container-fluid px-4 px-lg-5 mx-xl-3">
+    <section class="home-intro bg-dark text-white rounded-4 shadow-sm" aria-labelledby="page-title">
+        <div class="home-intro__main d-flex flex-column justify-content-center">
+            <h1 id="page-title" class="text-white">PDF 筆記轉移與製作</h1>
+            <p class="text-white-50 text-nowrap fw-normal mt-3">專為醫療機構開發的癌症登記手冊，筆記自動遷移平台，提供PDF註記編輯、版本差異比對與資料轉移功能</p>
+        </div>
+        <div class="home-intro__guide" aria-label="使用流程">
+            <span class="guide-label text-white-50 mb-3 d-inline-block">使用流程</span>
+            <ol class="list-unstyled">
+                <li class="mb-2"><b class="badge bg-warning text-dark me-2 rounded-pill px-2 py-1">01</b><span class="text-white fw-medium">上傳 PDF 建立版本</span></li>
+                <li class="mb-2"><b class="badge bg-warning text-dark me-2 rounded-pill px-2 py-1">02</b><span class="text-white fw-medium">執行新舊文件比對</span></li>
+                <li><b class="badge bg-warning text-dark me-2 rounded-pill px-2 py-1">03</b><span class="text-white fw-medium">確認並下載轉移結果</span></li>
+            </ol>
+        </div>
+    </section>
+
+    <section class="upload-section" aria-labelledby="upload-title">
+        <div class="section-heading">
+            <div>
+                <span class="section-kicker text-secondary">文件管理</span>
+                <h2 id="upload-title">上傳文件</h2>
             </div>
+            <p>新增需要製作的PDF文件，建立後即可進行文件編輯</p>
+        </div>
+        <div id="dropZone" class="upload-zone" role="button" tabindex="0" aria-label="選擇或拖曳 PDF 文件上傳">
+            <i class="bi bi-file-earmark-arrow-up" aria-hidden="true"></i>
+            <div>
+                <p>拖曳 PDF 至此處，或點擊選擇檔案</p>
+                <span>僅支援 PDF 格式</span>
+            </div>
+            <input type="file" id="pdfInput" accept=".pdf" hidden>
+        </div>
+    </section>
+
+    <section class="records-section" aria-labelledby="records-title">
+        <div class="section-heading records-heading">
+            <div>
+                <h2 id="records-title">筆記轉移紀錄</h2>
+            </div>
+            <label class="record-search" for="searchInput">
+                <i class="bi bi-search" aria-hidden="true"></i>
+                <input type="search" id="searchInput" placeholder="搜尋檔名">
+            </label>
         </div>
 
-        <div class="upload-section animate-fade-in">
-            <h5 class="fw-bold mb-3"><i class="bi bi-cloud-upload me-2 text-primary"></i>快速上傳文件</h5>
-            <div id="dropZone" class="upload-zone">
-                <div class="text-center">
-                    <i class="bi bi-file-earmark-plus display-4 text-primary opacity-50 mb-3"></i>
-                    <p class="mb-1 text-dark fw-medium">將檔案拖曳至此處或點擊上傳</p>
-                    <p class="text-muted small">僅支援 PDF 格式文件</p>
-                </div>
-                <input type="file" id="pdfInput" accept=".pdf" style="display: none">
-            </div>
-        </div>
-
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h5 class="fw-bold m-0 text-secondary">最近上傳的文件</h5>
-            <div class="input-group" style="width: 250px;">
-                <input type="text" class="form-control" id="searchInput" placeholder="搜尋檔名...">
-                <button class="btn btn-primary" type="button"><i class="bi bi-search"></i></button>
-            </div>
-        </div>
-
-        <div class="row g-4" id="file-grid">
-            {% for doc in documents %}
-            <div class="col-lg-3 col-md-4 col-sm-6 doc-item">
-                <div class="doc-card card h-100" onclick="doc_tool('edit', '{{ doc.DocID }}', event)">
-                    <div class="card-img-placeholder">
-                        <i class="bi bi-file-earmark-pdf display-1 text-danger opacity-75"></i>
-                    </div>
-                    <div class="card-body p-3">
-                        <h6 class="card-title text-truncate fw-bold mb-1" title="{{ doc.OriginalName }}">{{ doc.OriginalName }}</h6>
-                        <div class="d-flex justify-content-between align-items-center mt-2">
-                            <span class="badge bg-light text-secondary border fw-normal">{{ doc.Pages }} 頁</span>
-                            <small class="text-muted">{{ doc.UploadTime.strftime('%Y-%m-%d %H:%M') }}</small>
-                        </div>
-                    </div>
-                    <div class="card-footer bg-transparent border-0 text-end p-2 pb-3 pe-3">
-                        <button class="btn btn-sm btn-outline-danger" onclick="doc_tool('delete', '{{ doc.DocID }}', event)">
-                            <i class="bi bi-trash"></i> 刪除
-                        </button>
+        <div class="records-list" id="file-list">
+            {% for record in transfer_records %}
+            <article class="record-card list-item">
+                <div class="record-card__document">
+                    <div class="record-card__icon bg-warning-subtle border-warning"><i class="bi bi-journal-text text-dark" aria-hidden="true"></i></div>
+                    <div>
+                        <h6 title="{{ record.SourceFileName }}">{{ record.SourceFileName }}</h6>
+                        <p>
+                            <span>{{ record.OldV or '原始版本' }} <i class="bi bi-arrow-right" aria-hidden="true"></i> {{ record.NewV or '目標版本' }}</span>
+                        </p>
                     </div>
                 </div>
-            </div>
+                <div class="record-card__action d-flex align-items-center gap-3 justify-content-between">
+                    <span class="text-muted small text-nowrap"><i class="bi bi-clock me-1" aria-hidden="true"></i>{{ record.CreateTime.strftime('%Y-%m-%d %H:%M') }}</span>
+                    <div>
+                        {% if record.ResultName == 'PROCESSING' %}
+                            <span class="record-status record-status--processing">處理中</span>
+                        {% elif record.ResultName == 'ERROR' %}
+                            <span class="record-status record-status--error">轉移失敗</span>
+                        {% else %}
+                            <a href="/notes/action?action=download_pdf&filename={{ record.ResultName }}&transfer_id={{ record.TransferID }}" class="btn btn-dark bg-dark text-white border-dark">下載結果 <i class="bi bi-download ms-1" aria-hidden="true"></i></a>
+                        {% endif %}
+                    </div>
+                </div>
+            </article>
             {% else %}
-            <div class="col-12">
-                <div class="text-center py-5 text-muted bg-white rounded-4 shadow-sm border border-light">
-                    <i class="bi bi-folder2-open display-4 mb-3 text-secondary opacity-50"></i>
-                    <p class="mb-0">目前尚無上傳的筆記文件</p>
-                </div>
+            <div class="empty-records">
+                <i class="bi bi-journal-x" aria-hidden="true"></i>
+                <p>目前尚無筆記轉移紀錄</p>
             </div>
             {% endfor %}
         </div>
-    </div>
+    </section>
+</main>
 
-    <div id="loadingOverlay" class="spinner-overlay">
-        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
-        <p id="loadingText" class="mt-3 text-secondary small fw-bold">processing...</p>
-    </div>
+<div id="loadingOverlay" class="spinner-overlay">
+    <div class="spinner-border" role="status"><span class="visually-hidden">處理中</span></div>
+    <p id="loadingText">處理中...</p>
+</div>
 {% endblock %}
 
 {% block extra_js %}

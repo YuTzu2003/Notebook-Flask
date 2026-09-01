@@ -165,11 +165,11 @@ async function doc_tool(actionType, docId, event) {
 // --- 搜尋 ---
 document.getElementById('searchInput').addEventListener('keyup', function(e) {
     const term = e.target.value.toLowerCase();
-    const items = document.querySelectorAll('.doc-item');
+    const items = document.querySelectorAll('.list-item');
     items.forEach(item => {
-        const title = item.querySelector('.card-title').textContent.toLowerCase();
+        const title = item.querySelector('h6').textContent.toLowerCase();
         if (title.includes(term)) {
-            item.style.display = 'block';
+            item.style.display = 'flex';
         } else {
             item.style.display = 'none';
         }
