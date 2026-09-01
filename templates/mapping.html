@@ -7,10 +7,10 @@
 {% block content %}
     <div class="container-fluid px-4 px-lg-5 mx-xl-3" style="margin-top: 90px;">
         {% if session.Position == 'Admin' or session.Position == 'CTR'%}
-        <div class="card bg-dark text-white shadow-sm rounded-4 mb-4">
+        <div class="card bg-light shadow-sm rounded-3 mb-4">
             <div class="card-body p-4">
                 <h5 class="fw-bold mb-1">版本比對設定</h5>
-                <p class="text-white-50 small mb-4">請選擇舊版與新版癌登手冊PDF進行頁碼比對</p>
+                <p class="text-muted small mb-4">請選擇舊版與新版癌登手冊PDF進行頁碼比對</p>
 
                 <form id="MappingForm" onsubmit="event.preventDefault(); runMapping();">
                     <div class="row g-3 align-items-end">

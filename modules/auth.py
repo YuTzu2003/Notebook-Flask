@@ -221,7 +221,7 @@ def error_log():
     conn = get_conn()
     cursor = conn.cursor()
     
-    sql = "SELECT TOP 100 LogID, ErrorCode, ErrorMessage, Traceback, CreatedAt FROM ErrorLogs ORDER BY CreatedAt DESC"
+    sql = "SELECT TOP 100 LogID, ErrorCode, ErrorMessage, Traceback, CreatedAt FROM audit_logs ORDER BY CreatedAt DESC"
     
     try:
         cursor.execute(sql)

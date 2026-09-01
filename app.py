@@ -35,7 +35,7 @@ def create_app():
 
         error_code = str(uuid.uuid4()).split("-")[0]
         traceback_text = traceback.format_exc()
-        sql = "INSERT INTO ErrorLogs (ErrorCode, ErrorMessage, Traceback, CreatedAt) VALUES (?, ?, ?, GETDATE())"
+        sql = "INSERT INTO audit_logs (ErrorCode, ErrorMessage, Traceback, CreatedAt) VALUES (?, ?, ?, GETDATE())"
         execute_query(sql, (error_code, str(error), traceback_text))
         logging.error("Unhandled error %s\n%s", error_code, traceback_text)
 
