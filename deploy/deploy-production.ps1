@@ -74,6 +74,10 @@ $publicPort = [int](Get-EnvironmentValue -Path $envFile -Name "PUBLIC_HTTP_PORT"
 if ($publicPort -lt 1 -or $publicPort -gt 65535) {
     throw "PUBLIC_HTTP_PORT in .env must be between 1 and 65535."
 }
+$backendPort = [int](Get-EnvironmentValue -Path $envFile -Name "BACKEND_BASE_PORT")
+if ($backendPort -lt 1 -or $backendPort -gt 65535) {
+    throw "BACKEND_BASE_PORT in .env must be between 1 and 65535."
+}
 
 Set-Location -LiteralPath $projectRoot
 & uv sync
@@ -97,8 +101,9 @@ if ($nginxContent -notmatch '(?m)^\s*include\s+notebook_flask\.conf;') {
         throw "Could not find the http block in: $nginxConfig"
     }
     $nginxContent = $nginxContent -replace '(?m)^http\s*\{', "http {`r`n    include notebook_flask.conf;"
-    Set-Content -LiteralPath $nginxConfig -Value $nginxContent -Encoding utf8
 }
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($nginxConfig, $nginxContent, $utf8NoBom)
 
 Push-Location $nginxDirectory
 try {
@@ -123,4 +128,23 @@ New-NetFirewallRule -DisplayName "Notebook Flask HTTP" -Direction Inbound -Proto
 Start-ScheduledTask -TaskName "NotebookFlask-01"
 Start-ScheduledTask -TaskName "NotebookFlaskTaskWorker"
 
-Write-Host "Deployment completed. Wait about 30 seconds for the backend startup, then open http://<server-ip>/"
+$healthUri = "http://127.0.0.1:{0}/health" -f $backendPort
+$isHealthy = $false
+for ($attempt = 1; $attempt -le 30; $attempt++) {
+    Start-Sleep -Seconds 2
+    try {
+        $health = Invoke-RestMethod -Uri $healthUri -TimeoutSec 3 -ErrorAction Stop
+        if ($health.status -eq "ok") {
+            $isHealthy = $true
+            break
+        }
+    }
+    catch {
+    }
+}
+if (-not $isHealthy) {
+    $taskResult = (Get-ScheduledTaskInfo -TaskName "NotebookFlask-01").LastTaskResult
+    throw "Backend did not become ready at $healthUri. NotebookFlask-01 result: $taskResult. Read tasks\\logs\\notebook-flask-$backendPort.log"
+}
+
+Write-Host "Deployment completed. Open http://<server-ip>:$publicPort/"

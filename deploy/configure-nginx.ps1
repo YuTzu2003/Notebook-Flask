@@ -74,5 +74,6 @@ $projectRootForNginx = $projectRoot.Replace('\', '/')
 $content = $template.Replace('__UPSTREAM_SERVERS__', ($servers -join [Environment]::NewLine)).Replace('__PROJECT_ROOT__', $projectRootForNginx).Replace('__PUBLIC_HTTP_PORT__', $publicPort)
 $configDirectory = Split-Path -Parent $ConfigPath
 New-Item -ItemType Directory -Path $configDirectory -Force | Out-Null
-Set-Content -LiteralPath $ConfigPath -Value $content -Encoding utf8
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($ConfigPath, $content, $utf8NoBom)
 Write-Host "Nginx configuration written to: $ConfigPath"

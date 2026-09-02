@@ -1,4 +1,4 @@
-import fitz  # PyMuPDF
+import pymupdf as fitz
 import os
 import re
 from rapidfuzz.distance import Levenshtein

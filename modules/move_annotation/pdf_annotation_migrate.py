@@ -3,7 +3,7 @@ import re
 import math
 import statistics
 import logging
-import fitz
+import pymupdf as fitz
 import pdfrw
 import pandas as pd
 from rapidfuzz import fuzz

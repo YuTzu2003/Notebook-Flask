@@ -20,5 +20,6 @@ New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
 Set-Location -LiteralPath $projectRoot
 Start-Sleep -Seconds 30
 $env:ENABLE_SCHEDULER = "false"
+$ErrorActionPreference = "Continue"
 & $python -m modules.task_queue *>> $logFile
 exit $LASTEXITCODE

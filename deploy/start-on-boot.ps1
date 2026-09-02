@@ -29,5 +29,6 @@ Start-Sleep -Seconds 30
 $env:WAITRESS_HOST = "127.0.0.1"
 $env:WAITRESS_PORT = $Port
 $env:ENABLE_SCHEDULER = if ($RunScheduler) { "true" } else { "false" }
+$ErrorActionPreference = "Continue"
 & $python app.py *>> $logFile
 exit $LASTEXITCODE

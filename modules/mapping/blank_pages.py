@@ -1,4 +1,4 @@
-import fitz
+import pymupdf as fitz
 import pandas as pd
 import re
 

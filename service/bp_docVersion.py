@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, session, flash, redirect, url_for, send_from_directory, send_file
 import os
 import uuid
-import fitz
+import pymupdf as fitz
 from modules.db import execute_query
 from modules.auth import login_required
 

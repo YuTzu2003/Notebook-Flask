@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, jsonify, session
 import os
-import fitz
+import pymupdf as fitz
 from modules.auth import login_required
 from modules.db import execute_query
 from modules.task_queue import get_active_task_ids
