@@ -1,13 +1,9 @@
 import os
 from datetime import datetime
-
 from dotenv import load_dotenv
-
 from modules.db import get_conn
 
-
 load_dotenv()
-
 
 def run_database_backup():
     conn = None
@@ -16,6 +12,11 @@ def run_database_backup():
         os.makedirs(backup_dir, exist_ok=True)
 
         backup_path = os.getenv("DB_BACKUP_PATH", os.path.join(backup_dir, "Hospital_.bak"))
+        
+        # 自動建立備份路徑的資料夾 (確保指定的路徑存在)
+        target_dir = os.path.dirname(backup_path)
+        if target_dir:
+            os.makedirs(target_dir, exist_ok=True)
         database = os.getenv("DB_BACKUP_DATABASE", os.getenv("DB_NAME", "Hospital"))
         safe_database = database.replace("]", "]]")
         safe_backup_path = backup_path.replace("'", "''")
