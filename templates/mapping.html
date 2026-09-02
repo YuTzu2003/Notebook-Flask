@@ -107,7 +107,9 @@
                                             <span class="text-dark fw-bold">{{ row.CreateTime.strftime('%Y-%m-%d %H:%M') }}</span>
                                         </div>
                                         <div>
-                                            {% if row.DiffPages == 'PROCESSING' %}
+                                            {% if row.DiffPages == 'QUEUED' %}
+                                                <span id="status-badge-{{ row.RecordID }}" class="badge bg-warning bg-opacity-10 text-dark border border-warning border-opacity-25 fw-normal">queued</span>
+                                            {% elif row.DiffPages == 'PROCESSING' %}
                                                 <span id="status-badge-{{ row.RecordID }}" data-id="{{ row.RecordID }}" class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-10 fw-normal d-flex align-items-center gap-1 processing-badge">
                                                     <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="width: 0.7rem; height: 0.7rem;"></span>
                                                     processing...

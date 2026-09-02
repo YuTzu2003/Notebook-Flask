@@ -1,4 +1,4 @@
-import fitz
+import pymupdf as fitz
 import pandas as pd
 from modules.move_annotation.detect_blankPage import get_pdf_blank_pages, get_json_blank_pages, compare_shifted_pages
 

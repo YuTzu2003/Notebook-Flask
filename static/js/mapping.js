@@ -26,7 +26,7 @@ async function runMapping() {
 }
 
 function resetButton(btn, originalText) {
-    btn.disabled = false;
+    btn.innerHTML = originalText;
     btn.disabled = false;
 }
 

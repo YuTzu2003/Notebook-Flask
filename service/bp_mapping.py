@@ -3,6 +3,7 @@ import os
 import uuid
 from modules.auth import login_required
 from modules.db import execute_query
+from modules.task_queue import enqueue_task
 from modules.mapping.mapping import UseMapping as process_and_match_pdfs
 from modules.mapping.pdf_diff import highlight_and_bookmark_diffs
 import threading
@@ -21,10 +22,11 @@ def mapping_page():
     sql_history = """
                     SELECT  MappingRecord.RecordID, Users.Name, DocVersion_Old.FileName AS OldFileName, DocVersion_Old.Version AS OldVersion, 
                             DocVersion_New.FileName AS NewFileName, DocVersion_New.Version AS NewVersion, MappingRecord.Status, dbo.MappingRecord.CreateTime, 
-                            MappingRecord.IsPublish
+                            MappingRecord.IsPublish, BackgroundTasks.Status AS TaskStatus
                     FROM MappingRecord INNER JOIN Users ON MappingRecord.Creator = Users.ID 
                     LEFT OUTER JOIN DocVersion AS DocVersion_Old ON MappingRecord.OldDocID = DocVersion_Old.ID 
                     LEFT OUTER JOIN DocVersion AS DocVersion_New ON MappingRecord.NewDocID = DocVersion_New.ID
+                    LEFT OUTER JOIN BackgroundTasks ON BackgroundTasks.TaskID = MappingRecord.RecordID
                     ORDER BY dbo.MappingRecord.CreateTime DESC
                 """
     history = execute_query(sql_history)
@@ -47,7 +49,7 @@ def mapping_page():
     return render_template('mapping.html',files=docVersion,history=history)
 
 
-mapping_semaphore = threading.Semaphore(3)
+mapping_semaphore = threading.Semaphore(max(1, int(os.getenv("PDF_TASK_CONCURRENCY", "1"))))
 
 from modules.mapping.blank_pages import get_blanks
 
@@ -55,6 +57,14 @@ def run_mapping_background(app, record_id, old_pdf_path, new_pdf_path, csv_resul
     with app.app_context():
         mapping_semaphore.acquire()
         try:
+            json_path = os.path.join(os.path.dirname(csv_result), f"{record_id}.json")
+            if os.path.exists(json_path):
+                with open(json_path, 'r', encoding='utf-8') as jf:
+                    meta_data = json.load(jf)
+                meta_data["status"] = "PROCESSING"
+                with open(json_path, 'w', encoding='utf-8') as jf:
+                    json.dump(meta_data, jf, ensure_ascii=False, indent=4)
+
             # 取得舊版與新版空白頁碼
             old_blanks = get_blanks(old_pdf_path)
             new_blanks = get_blanks(new_pdf_path)
@@ -103,6 +113,7 @@ def run_mapping_background(app, record_id, old_pdf_path, new_pdf_path, csv_resul
             else:
                 sql = "UPDATE MappingRecord SET Status = ? WHERE RecordID = ?"
             execute_query(sql, (is_success, record_id))
+            return is_success == 1
         except Exception as e:
             print("Background Mapping Error:", e)
             try:
@@ -123,6 +134,7 @@ def run_mapping_background(app, record_id, old_pdf_path, new_pdf_path, csv_resul
             
             sql = "UPDATE MappingRecord SET Status = 0 WHERE RecordID = ?"
             execute_query(sql, (record_id,))
+            return False
         finally:
             mapping_semaphore.release()
 
@@ -162,7 +174,7 @@ def doc_mapping():
         old_name = file_info.get(str(old_id), f"{old_id}.pdf")
         new_name = file_info.get(str(new_id), f"{new_id}.pdf")
         meta_data = {
-            "status": "PROCESSING",
+            "status": "QUEUED",
             "diff_pages": [],
             "files_compared": {
                 "old_pdf": old_name,
@@ -176,10 +188,19 @@ def doc_mapping():
         with open(json_path, 'w', encoding='utf-8') as jf:
             json.dump(meta_data, jf, ensure_ascii=False, indent=4)
 
-        app_obj = current_app._get_current_object()
-        thread = threading.Thread(target=run_mapping_background, args=(app_obj, record_id, old_pdf_path, new_pdf_path, csv_result, template_pdf_path))
-        thread.start()      
-        return jsonify({"status": "success", "message": "版本比對開始執行！"})
+        task_payload = {
+            "record_id": record_id,
+            "old_pdf_path": old_pdf_path,
+            "new_pdf_path": new_pdf_path,
+            "csv_result": csv_result,
+            "template_pdf_path": template_pdf_path,
+        }
+        if enqueue_task(record_id, "mapping", creator, task_payload):
+            return jsonify({"status": "success", "message": "版本比對已加入排隊。"})
+        meta_data["status"] = "ERROR"
+        with open(json_path, 'w', encoding='utf-8') as jf:
+            json.dump(meta_data, jf, ensure_ascii=False, indent=4)
+        return jsonify({"status": "error", "message": "無法建立排隊工作"}), 500
     else:
         return jsonify({"status": "error", "message": "比對過程發生錯誤"})
 

@@ -57,7 +57,7 @@ def audit_request(response):
     if request.path == "/favicon.ico":
         return response
 
-    if not session.get("UserID"):
+    if not session.get("ID"):
         return response
 
     action_prefix = endpoint.replace(".", "_")

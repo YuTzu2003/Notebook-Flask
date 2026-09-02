@@ -18,6 +18,7 @@ wheels/
 *.env
 *.xlsx
 *.pptx
+*.log
 
 CLAUDE.md
 AGENTS.md

@@ -1,4 +1,4 @@
-import fitz
+import pymupdf as fitz
 import json
 
 # 筆記PDF空白頁碼

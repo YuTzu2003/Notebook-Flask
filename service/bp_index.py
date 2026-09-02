@@ -1,12 +1,12 @@
-from flask import Blueprint, render_template, request, jsonify, session, current_app
-import os
 import json
-import fitz
+from flask import Blueprint, render_template, request, jsonify, session
+import os
+import pymupdf as fitz
 from modules.auth import login_required
 from modules.db import execute_query
+from modules.task_queue import get_active_task_ids
 
 bp_index = Blueprint('bp_index', __name__)
-
 UPLOAD_Folder = "tasks/uploads"
 NOTE_Folder = "tasks/annotation"
 
@@ -15,17 +15,15 @@ NOTE_Folder = "tasks/annotation"
 def index():
     user_id = session.get("ID")
     sql_history = """SELECT TOP 10 H.TransferID, H.SourceFileName,H.ResultName,H.CreateTime,V_Old.Version AS OldV, V_New.Version AS NewV
-                    FROM Hospital.dbo.NoteTransferHistory H
+                    FROM dbo.NoteTransferHistory H
                     LEFT JOIN MappingRecord M ON H.MappingID = M.RecordID
                     LEFT JOIN DocVersion V_Old ON M.OldDocID = V_Old.ID
                     LEFT JOIN DocVersion V_New ON M.NewDocID = V_New.ID
                     WHERE H.UserID = ?
                     ORDER BY H.CreateTime DESC"""
     transfer_records = execute_query(sql_history, (user_id,))
-    
     sql_docs = "SELECT * FROM Documents WHERE User_ID = ? ORDER BY UploadTime DESC"
     documents = execute_query(sql_docs, (user_id,))
-    
     return render_template("index.html", transfer_records=transfer_records, documents=documents)
 
 @bp_index.route("/doc_tool", methods=["POST"])
@@ -77,8 +75,7 @@ def doc_tool():
                 }
             })
             
-        return jsonify({"success": False, "message": "未知的操作指令"}), 400
-        
+        return jsonify({"success": False, "message": "未知的操作指令"}), 400      
     except Exception as e:
         print(f"doc_tool Error: {e}")
         return jsonify({"success": False, "message": f"error: {str(e)}"}), 500
@@ -86,32 +83,4 @@ def doc_tool():
 @bp_index.route("/api/user_processing_tasks")
 @login_required
 def user_processing_tasks():
-    user_id = session.get("ID")
-    
-    # Mapping records
-    sql_mapping = "SELECT RecordID FROM MappingRecord WHERE Creator = ? AND Status = 0"
-    mapping_tasks = execute_query(sql_mapping, (user_id,))
-    
-    processing_ids = []
-    for r in mapping_tasks:
-        rid = r['RecordID']
-        json_path = os.path.join(current_app.root_path, "tasks/docMapResult", rid, f"{rid}.json")
-        if os.path.exists(json_path):
-            try:
-                with open(json_path, 'r', encoding='utf-8') as jf:
-                    data = json.load(jf)
-                    if data.get("status") == "PROCESSING":
-                        processing_ids.append(rid)
-            except Exception:
-                pass
-        else:
-            processing_ids.append(rid)
-    
-    # Note Transfer records
-    sql_notes = "SELECT TransferID FROM Hospital.dbo.NoteTransferHistory WHERE UserID = ? AND ResultName = 'PROCESSING'"
-    note_tasks = execute_query(sql_notes, (user_id,))
-    
-    return jsonify({
-        "mapping": processing_ids,
-        "notes": [r['TransferID'] for r in note_tasks]
-    })
+    return jsonify(get_active_task_ids(session.get("ID")))

@@ -1,4 +1,4 @@
-import fitz
+import pymupdf as fitz
 import pdfplumber
 import pandas as pd
 import numpy as np

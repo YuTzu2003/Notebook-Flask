@@ -1,14 +1,9 @@
-param(
-    [int]$Port = 50001,
-    [switch]$RunScheduler
-)
-
 $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $python = Join-Path $projectRoot ".venv\Scripts\python.exe"
 $logDirectory = Join-Path $projectRoot "tasks\logs"
-$logFile = Join-Path $logDirectory ("notebook-flask-{0}.log" -f $Port)
+$logFile = Join-Path $logDirectory "notebook-flask-task-worker.log"
 
 if (-not (Test-Path -LiteralPath $python)) {
     throw "Python environment not found: $python. Run 'uv sync' first."
@@ -18,17 +13,13 @@ $envLine = Get-Content -LiteralPath (Join-Path $projectRoot ".env") |
     Where-Object { $_ -match '^APP_ENV=' } |
     Select-Object -Last 1
 if ($envLine -ne "APP_ENV=production") {
-    throw "Set APP_ENV=production in .env before enabling automatic startup."
+    throw "Set APP_ENV=production in .env before starting the task worker."
 }
 
 New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
 Set-Location -LiteralPath $projectRoot
-
-# Allow local SQL Server, network, and Nginx services to finish booting.
 Start-Sleep -Seconds 30
-$env:WAITRESS_HOST = "127.0.0.1"
-$env:WAITRESS_PORT = $Port
-$env:ENABLE_SCHEDULER = if ($RunScheduler) { "true" } else { "false" }
+$env:ENABLE_SCHEDULER = "false"
 $ErrorActionPreference = "Continue"
-& $python app.py *>> $logFile
+& $python -m modules.task_queue *>> $logFile
 exit $LASTEXITCODE
