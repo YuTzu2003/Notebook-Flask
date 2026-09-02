@@ -38,6 +38,12 @@ class DeploySchemaTest(unittest.TestCase):
         schema = init_database.SCHEMA_PATH.read_text(encoding="utf-8")
         self.assertNotRegex(schema, r"(?im)^\s*USE\b")
 
+    def test_schema_seeds_admin_only_when_missing(self):
+        schema = init_database.SCHEMA_PATH.read_text(encoding="utf-8")
+        self.assertIn("UserID = N'notebook_admin01'", schema)
+        self.assertIn("INSERT INTO dbo.Users", schema)
+        self.assertNotIn("N'notebook_admin01', N'notebook_admin01'", schema)
+
 
 if __name__ == "__main__":
     unittest.main()

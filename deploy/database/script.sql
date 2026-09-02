@@ -1,5 +1,5 @@
 -- This script runs against the database selected by DATABASE_URL in .env.
--- Do not add USE, CREATE DATABASE, credentials, or seed users to this file.
+-- Do not add USE, CREATE DATABASE, or connection credentials to this file.
 
 IF OBJECT_ID(N'dbo.Users', N'U') IS NULL
 BEGIN
@@ -18,6 +18,26 @@ GO
 
 IF COL_LENGTH(N'dbo.Users', N'Password') < 512
     ALTER TABLE dbo.Users ALTER COLUMN Password nvarchar(512) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM dbo.Users
+    WHERE ID = CONVERT(uniqueidentifier, '8b6e3c2f-c063-f111-a79b-047f0e4e1d57')
+       OR UserID = N'notebook_admin01'
+)
+BEGIN
+    INSERT INTO dbo.Users (ID, UserID, Password, Name, Position, Location, Last_login)
+    VALUES (
+        CONVERT(uniqueidentifier, '8b6e3c2f-c063-f111-a79b-047f0e4e1d57'),
+        N'notebook_admin01',
+        N'scrypt:32768:8:1$6kd2GcMbb76NaRGz$292f0785313da958528c2b76544b9b857024f2cc1498c015c8e9caf6234e53448e062c3e08e161ceba7b7dab9e142195d7e4601297dbeb3d3155bba457d1a7f1',
+        N'系統管理者',
+        N'Admin',
+        N'雲林台大醫院',
+        SYSDATETIME()
+    );
+END
 GO
 
 IF OBJECT_ID(N'dbo.Documents', N'U') IS NULL
