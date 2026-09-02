@@ -24,21 +24,14 @@ def run_migrate_background(app, transfer_id, old_pdf_path, new_pdf_path, csv_map
     with app.app_context():
         migrate_semaphore.acquire()
         try:
-            execute_query("UPDATE Hospital.dbo.NoteTransferHistory SET ResultName = 'PROCESSING' WHERE TransferID = ?", (transfer_id,))
+            execute_query("UPDATE dbo.NoteTransferHistory SET ResultName = 'PROCESSING' WHERE TransferID = ?", (transfer_id,))
             base_dir = os.path.dirname(output_pdf)
             dynamic_template_path = os.path.join(base_dir, "Template.pdf")
             dynamic_csv_path = os.path.join(base_dir, "Mapping.csv")
             
             has_inserted_blanks = False
             try:
-                has_inserted_blanks = generate_dynamic_template(
-                    old_pdf_path,
-                    json_path,
-                    csv_mapping,
-                    new_pdf_path,
-                    dynamic_template_path,
-                    dynamic_csv_path
-                )
+                has_inserted_blanks = generate_dynamic_template( old_pdf_path,json_path, csv_mapping,new_pdf_path, dynamic_template_path,dynamic_csv_path)
             except Exception as e:
                 print("Dynamic Template Generation Error:", e)
                 
@@ -51,13 +44,12 @@ def run_migrate_background(app, transfer_id, old_pdf_path, new_pdf_path, csv_map
 
             migrate_all_to_pdf(old_pdf_path, actual_new_pdf, actual_csv, output_pdf, diff_pages_str)
             time.sleep(1.5)
-            sql = "UPDATE Hospital.dbo.NoteTransferHistory SET ResultName = ? WHERE TransferID = ?"
+            sql = "UPDATE dbo.NoteTransferHistory SET ResultName = ? WHERE TransferID = ?"
             execute_query(sql, (output_filename, transfer_id))
-            return True
-            
+            return True          
         except Exception as e:
             print("Background Migrate Error:", e)
-            sql = "UPDATE Hospital.dbo.NoteTransferHistory SET ResultName = 'ERROR' WHERE TransferID = ?"
+            sql = "UPDATE dbo.NoteTransferHistory SET ResultName = 'ERROR' WHERE TransferID = ?"
             execute_query(sql, (transfer_id,))
             return False
         finally:
@@ -82,11 +74,11 @@ def notes_page():
                     JOIN DocVersion V1 ON M.OldDocID = V1.ID
                     JOIN DocVersion V2 ON M.NewDocID = V2.ID
                     WHERE M.IsPublish = 1"""
-    mapping_history = execute_query(sql_mapping)
     
+    mapping_history = execute_query(sql_mapping)    
     sql_history = f"""SELECT H.TransferID, H.SourceFileName,H.ResultName,H.CreateTime,V_Old.Version AS OldV, V_New.Version AS NewV,
                     BackgroundTasks.Status AS TaskStatus
-                    FROM Hospital.dbo.NoteTransferHistory H
+                    FROM dbo.NoteTransferHistory H
                     LEFT JOIN MappingRecord M ON H.MappingID = M.RecordID
                     LEFT JOIN DocVersion V_Old ON M.OldDocID = V_Old.ID
                     LEFT JOIN DocVersion V_New ON M.NewDocID = V_New.ID
@@ -143,7 +135,7 @@ def migrate_pdf_api():
         output_filename = f"Move_{original_filename}"
         output_path = os.path.join(note_dir, output_filename)
 
-        sql_insert = """INSERT INTO Hospital.dbo.NoteTransferHistory (TransferID, UserID, MappingID, SourceFileName, ResultName) VALUES (?, ?, ?, ?, ?)"""
+        sql_insert = """INSERT INTO dbo.NoteTransferHistory (TransferID, UserID, MappingID, SourceFileName, ResultName) VALUES (?, ?, ?, ?, ?)"""
         execute_query(sql_insert, (TransferID, user_id, mapping_id, pdf_with_notes.filename, 'QUEUED'))
         task_payload = {
             "transfer_id": TransferID,
@@ -157,7 +149,7 @@ def migrate_pdf_api():
         }
         if enqueue_task(TransferID, "migration", user_id, task_payload):
             return jsonify({"status": "success", "message": "筆記轉移已加入排隊。"})
-        execute_query("UPDATE Hospital.dbo.NoteTransferHistory SET ResultName = 'ERROR' WHERE TransferID = ?", (TransferID,))
+        execute_query("UPDATE dbo.NoteTransferHistory SET ResultName = 'ERROR' WHERE TransferID = ?", (TransferID,))
         return jsonify({"status": "error", "message": "無法建立排隊工作"}), 500
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
@@ -170,7 +162,7 @@ def notes_action():
         action = request.args.get("action")
         if action == "download_pdf":
             filename = request.args.get("filename")
-            sql = """SELECT SourceFileName, TransferID FROM Hospital.dbo.NoteTransferHistory WHERE ResultName = ? AND UserID = ?"""
+            sql = """SELECT SourceFileName, TransferID FROM dbo.NoteTransferHistory WHERE ResultName = ? AND UserID = ?"""
             result = execute_query(sql, (filename, user_id))
 
             if result:
@@ -178,8 +170,7 @@ def notes_action():
                 transfer_id = result[0]['TransferID']
                 base_name = os.path.splitext(source_file_name)[0]
                 note_dir = os.path.join(current_app.root_path, "tasks/note", transfer_id if transfer_id.startswith("note") else f"note{transfer_id}")
-                download_name = f"{base_name}_Move.pdf"
-                
+                download_name = f"{base_name}_Move.pdf"               
                 return send_from_directory(note_dir, filename, as_attachment=True, download_name=download_name)
             return "File not found", 404
         return "Bad Request", 400
@@ -245,7 +236,7 @@ def notes_action():
 @bp_notes.route("/notes/status/<transfer_id>", methods=["GET"])
 @login_required
 def notes_status(transfer_id):
-    sql = "SELECT ResultName FROM Hospital.dbo.NoteTransferHistory WHERE TransferID = ? AND UserID = ?"
+    sql = "SELECT ResultName FROM dbo.NoteTransferHistory WHERE TransferID = ? AND UserID = ?"
     result = execute_query(sql, (transfer_id, session.get("ID")))
     if result:
         return jsonify({"success": True, "ResultName": result[0]["ResultName"]})

@@ -1,3 +1,4 @@
+import json
 from flask import Blueprint, render_template, request, jsonify, session
 import os
 import pymupdf as fitz
@@ -6,7 +7,6 @@ from modules.db import execute_query
 from modules.task_queue import get_active_task_ids
 
 bp_index = Blueprint('bp_index', __name__)
-
 UPLOAD_Folder = "tasks/uploads"
 NOTE_Folder = "tasks/annotation"
 
@@ -15,17 +15,15 @@ NOTE_Folder = "tasks/annotation"
 def index():
     user_id = session.get("ID")
     sql_history = """SELECT TOP 10 H.TransferID, H.SourceFileName,H.ResultName,H.CreateTime,V_Old.Version AS OldV, V_New.Version AS NewV
-                    FROM Hospital.dbo.NoteTransferHistory H
+                    FROM dbo.NoteTransferHistory H
                     LEFT JOIN MappingRecord M ON H.MappingID = M.RecordID
                     LEFT JOIN DocVersion V_Old ON M.OldDocID = V_Old.ID
                     LEFT JOIN DocVersion V_New ON M.NewDocID = V_New.ID
                     WHERE H.UserID = ?
                     ORDER BY H.CreateTime DESC"""
     transfer_records = execute_query(sql_history, (user_id,))
-    
     sql_docs = "SELECT * FROM Documents WHERE User_ID = ? ORDER BY UploadTime DESC"
     documents = execute_query(sql_docs, (user_id,))
-    
     return render_template("index.html", transfer_records=transfer_records, documents=documents)
 
 @bp_index.route("/doc_tool", methods=["POST"])
@@ -77,8 +75,7 @@ def doc_tool():
                 }
             })
             
-        return jsonify({"success": False, "message": "未知的操作指令"}), 400
-        
+        return jsonify({"success": False, "message": "未知的操作指令"}), 400      
     except Exception as e:
         print(f"doc_tool Error: {e}")
         return jsonify({"success": False, "message": f"error: {str(e)}"}), 500
