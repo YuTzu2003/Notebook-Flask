@@ -1,9 +1,14 @@
 import os
 from datetime import datetime
+
 from dotenv import load_dotenv
 from modules.db import get_conn
 
+from modules.db import get_conn
+
+
 load_dotenv()
+
 
 def run_database_backup():
     conn = None
