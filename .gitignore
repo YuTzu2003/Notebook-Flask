@@ -10,7 +10,6 @@ wheels/
 .venv
 .vscode/
 *.exe
-*.lock
 *.pdf
 *.csv
 *.xfdf
