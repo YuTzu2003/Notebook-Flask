@@ -42,7 +42,7 @@ for ($index = 0; $index -lt $workerCount; $index++) {
     $listenAddress = "127.0.0.$($index + 1)"
     $taskName = "NotebookFlask-{0:D2}" -f ($index + 1)
     $schedulerArgument = if ($index -eq 0) { " -RunScheduler" } else { "" }
-    $arguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -Port {1} -Host {2}{3}' -f $startupScript, $port, $listenAddress, $schedulerArgument
+    $arguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -Port {1} -ListenAddress {2}{3}' -f $startupScript, $port, $listenAddress, $schedulerArgument
     $action = New-ScheduledTaskAction -Execute $powershell -Argument $arguments
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $taskPrincipal -Description "Starts Notebook Flask worker on port $port." -Force | Out-Null
     Write-Host "Registered scheduled task: $taskName"
