@@ -19,8 +19,12 @@ function Invoke-AppCmd {
     )
 
     $appCmd = Join-Path $env:windir "System32\inetsrv\appcmd.exe"
+    if ($IgnoreFailure) {
+        & $appCmd @Arguments 2>$null | Out-Null
+        return
+    }
     & $appCmd @Arguments
-    if ($LASTEXITCODE -ne 0 -and -not $IgnoreFailure) {
+    if ($LASTEXITCODE -ne 0) {
         throw "appcmd failed: $($Arguments -join ' ')"
     }
 }
