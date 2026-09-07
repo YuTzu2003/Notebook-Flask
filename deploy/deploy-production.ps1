@@ -1,5 +1,5 @@
 param(
-    [string]$NginxExecutablePath = "C:\nginx\nginx.exe"
+    [string]$IisSiteName = "NotebookFlask"
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,10 +40,6 @@ $driver17 = Test-Path "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\ODBC Driver 17 for SQL S
 if (-not $driver18 -and -not $driver17) {
     throw "ODBC Driver 17 or 18 for SQL Server was not found. Install it before deployment."
 }
-if (-not (Test-Path -LiteralPath $NginxExecutablePath)) {
-    throw "nginx.exe was not found: $NginxExecutablePath"
-}
-
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $envFile = Join-Path $projectRoot ".env"
 $envExample = Join-Path $projectRoot ".env.example"
@@ -86,46 +82,15 @@ if ($LASTEXITCODE -ne 0) { throw "uv sync failed." }
 & uv run python .\deploy\init_database.py
 if ($LASTEXITCODE -ne 0) { throw "Database initialization failed." }
 
-$nginxDirectory = Split-Path -Parent $NginxExecutablePath
-$nginxConfigDirectory = Join-Path $nginxDirectory "conf"
-$nginxConfig = Join-Path $nginxConfigDirectory "nginx.conf"
-$siteConfig = Join-Path $nginxConfigDirectory "notebook_flask.conf"
-if (-not (Test-Path -LiteralPath $nginxConfig)) {
-    throw "Nginx configuration was not found: $nginxConfig"
-}
-
-& (Join-Path $PSScriptRoot "configure-nginx.ps1") -ConfigPath $siteConfig
-$nginxContent = Get-Content -LiteralPath $nginxConfig -Raw
-if ($nginxContent -notmatch '(?m)^\s*include\s+notebook_flask\.conf;') {
-    if ($nginxContent -notmatch '(?m)^http\s*\{') {
-        throw "Could not find the http block in: $nginxConfig"
-    }
-    $nginxContent = $nginxContent -replace '(?m)^http\s*\{', "http {`r`n    include notebook_flask.conf;"
-}
-$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-[System.IO.File]::WriteAllText($nginxConfig, $nginxContent, $utf8NoBom)
-
-Push-Location $nginxDirectory
-try {
-    & $NginxExecutablePath -t
-    if ($LASTEXITCODE -ne 0) { throw "Nginx configuration validation failed." }
-    if (Get-Process -Name "nginx" -ErrorAction SilentlyContinue) {
-        & $NginxExecutablePath -s reload
-    }
-    else {
-        Start-Process -FilePath $NginxExecutablePath -WorkingDirectory $nginxDirectory
-    }
-}
-finally {
-    Pop-Location
-}
+& (Join-Path $PSScriptRoot "configure-iis.ps1") -SiteName $IisSiteName -PublicPort $publicPort
 
 Get-NetFirewallRule -DisplayName "Notebook Flask HTTP" -ErrorAction SilentlyContinue |
     Remove-NetFirewallRule
 New-NetFirewallRule -DisplayName "Notebook Flask HTTP" -Direction Inbound -Protocol TCP -LocalPort $publicPort -Action Allow | Out-Null
 
-& (Join-Path $PSScriptRoot "register-autostart.ps1") -NginxExecutablePath $NginxExecutablePath
-Start-ScheduledTask -TaskName "NotebookFlask-01"
+& (Join-Path $PSScriptRoot "register-autostart.ps1")
+Get-ScheduledTask -TaskName "NotebookFlask-??" -ErrorAction Stop |
+    ForEach-Object { Start-ScheduledTask -TaskName $_.TaskName }
 Start-ScheduledTask -TaskName "NotebookFlaskTaskWorker"
 
 $healthUri = "http://127.0.0.1:{0}/health" -f $backendPort
@@ -145,6 +110,17 @@ for ($attempt = 1; $attempt -le 30; $attempt++) {
 if (-not $isHealthy) {
     $taskResult = (Get-ScheduledTaskInfo -TaskName "NotebookFlask-01").LastTaskResult
     throw "Backend did not become ready at $healthUri. NotebookFlask-01 result: $taskResult. Read tasks\\logs\\notebook-flask-$backendPort.log"
+}
+
+$publicHealthUri = "http://127.0.0.1:{0}/health" -f $publicPort
+try {
+    $publicHealth = Invoke-RestMethod -Uri $publicHealthUri -TimeoutSec 3 -ErrorAction Stop
+    if ($publicHealth.status -ne "ok") {
+        throw "Unexpected health response."
+    }
+}
+catch {
+    throw "IIS + ARR did not become ready at $publicHealthUri. $($_.Exception.Message)"
 }
 
 Write-Host "Deployment completed. Open http://<server-ip>:$publicPort/"

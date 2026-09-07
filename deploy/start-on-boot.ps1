@@ -1,5 +1,6 @@
 param(
     [int]$Port = 50001,
+    [string]$ListenAddress = "127.0.0.1",
     [switch]$RunScheduler
 )
 
@@ -24,9 +25,9 @@ if ($envLine -ne "APP_ENV=production") {
 New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
 Set-Location -LiteralPath $projectRoot
 
-# Allow local SQL Server, network, and Nginx services to finish booting.
+# Allow local SQL Server and network services to finish booting.
 Start-Sleep -Seconds 30
-$env:WAITRESS_HOST = "127.0.0.1"
+$env:WAITRESS_HOST = $ListenAddress
 $env:WAITRESS_PORT = $Port
 $env:ENABLE_SCHEDULER = if ($RunScheduler) { "true" } else { "false" }
 $ErrorActionPreference = "Continue"

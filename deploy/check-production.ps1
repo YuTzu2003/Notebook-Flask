@@ -24,6 +24,7 @@ if (-not (Test-Path -LiteralPath $envFile)) {
 $publicPort = Get-EnvironmentValue -Path $envFile -Name "PUBLIC_HTTP_PORT"
 $backendPort = Get-EnvironmentValue -Path $envFile -Name "BACKEND_BASE_PORT"
 $healthUri = "http://127.0.0.1:{0}/health" -f $backendPort
+$publicHealthUri = "http://127.0.0.1:{0}/health" -f $publicPort
 
 Write-Host "Backend health: $healthUri"
 try {
@@ -33,6 +34,16 @@ catch {
     Write-Host "Backend is unavailable: $($_.Exception.Message)" -ForegroundColor Red
 }
 
+Write-Host "IIS + ARR health: $publicHealthUri"
+try {
+    Invoke-RestMethod -Uri $publicHealthUri -TimeoutSec 3 -ErrorAction Stop | ConvertTo-Json -Compress
+}
+catch {
+    Write-Host "IIS + ARR is unavailable: $($_.Exception.Message)" -ForegroundColor Red
+}
+
+Get-Website -Name "NotebookFlask" -ErrorAction SilentlyContinue |
+    Select-Object Name, State, PhysicalPath
 Write-Host "Public URL: http://<server-ip>:$publicPort/"
 Get-ScheduledTask -TaskName "NotebookFlask*" -ErrorAction SilentlyContinue |
     Select-Object TaskName, State
