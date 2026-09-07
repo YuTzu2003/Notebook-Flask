@@ -1,7 +1,3 @@
-param(
-    [string]$NginxExecutablePath = "C:\nginx\nginx.exe"
-)
-
 $ErrorActionPreference = "Stop"
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -21,10 +17,6 @@ if (-not (Test-Path -LiteralPath $startupScript)) {
 if (-not (Test-Path -LiteralPath $taskWorkerScript)) {
     throw "Task worker script not found: $taskWorkerScript"
 }
-if (-not (Test-Path -LiteralPath $NginxExecutablePath)) {
-    throw "nginx.exe was not found: $NginxExecutablePath"
-}
-
 $workerLine = Get-Content -LiteralPath (Join-Path $projectRoot ".env") |
     Where-Object { $_ -match '^APP_WORKERS=' } |
     Select-Object -Last 1
@@ -47,9 +39,10 @@ $taskPrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceA
 
 for ($index = 0; $index -lt $workerCount; $index++) {
     $port = $backendBasePort + $index
+    $host = "127.0.0.$($index + 1)"
     $taskName = "NotebookFlask-{0:D2}" -f ($index + 1)
     $schedulerArgument = if ($index -eq 0) { " -RunScheduler" } else { "" }
-    $arguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -Port {1}{2}' -f $startupScript, $port, $schedulerArgument
+    $arguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -Port {1} -Host {2}{3}' -f $startupScript, $port, $host, $schedulerArgument
     $action = New-ScheduledTaskAction -Execute $powershell -Argument $arguments
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $taskPrincipal -Description "Starts Notebook Flask worker on port $port." -Force | Out-Null
     Write-Host "Registered scheduled task: $taskName"
@@ -58,8 +51,3 @@ for ($index = 0; $index -lt $workerCount; $index++) {
 $taskWorkerAction = New-ScheduledTaskAction -Execute $powershell -Argument ('-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $taskWorkerScript)
 Register-ScheduledTask -TaskName "NotebookFlaskTaskWorker" -Action $taskWorkerAction -Trigger $trigger -Settings $settings -Principal $taskPrincipal -Description "Processes queued PDF mapping and migration tasks." -Force | Out-Null
 Write-Host "Registered scheduled task: NotebookFlaskTaskWorker"
-
-$nginxDirectory = Split-Path -Parent $NginxExecutablePath
-$nginxAction = New-ScheduledTaskAction -Execute $NginxExecutablePath -WorkingDirectory $nginxDirectory
-Register-ScheduledTask -TaskName "NotebookFlaskNginx" -Action $nginxAction -Trigger $trigger -Settings $settings -Principal $taskPrincipal -Description "Starts Nginx for Notebook Flask." -Force | Out-Null
-Write-Host "Registered scheduled task: NotebookFlaskNginx"

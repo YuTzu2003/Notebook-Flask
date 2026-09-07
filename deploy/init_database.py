@@ -1,10 +1,8 @@
 import os
 import re
 from pathlib import Path
-
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = PROJECT_ROOT / "deploy" / "database" / "script.sql"
@@ -35,9 +33,7 @@ def main():
     with engine.begin() as connection:
         for statement in load_schema_statements():
             connection.execute(text(statement))
-
     print("Database schema is ready.")
-
 
 if __name__ == "__main__":
     main()
