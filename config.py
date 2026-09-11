@@ -38,6 +38,7 @@ def get_settings():
         "TRUSTED_PROXY": os.getenv("TRUSTED_PROXY", "127.0.0.1"),
         "PROXY_COUNT": _get_int("PROXY_COUNT", 1 if is_production else 0),
         "ENABLE_SCHEDULER": _get_bool("ENABLE_SCHEDULER", is_production),
+        "TASK_RECOVERY_MINUTES": _get_int("TASK_RECOVERY_MINUTES", 120),
         "SESSION_COOKIE_HTTPONLY": True,
         "SESSION_COOKIE_SAMESITE": os.getenv("SESSION_COOKIE_SAMESITE", "Lax"),
         "SESSION_COOKIE_SECURE": _get_bool("SESSION_COOKIE_SECURE", False),

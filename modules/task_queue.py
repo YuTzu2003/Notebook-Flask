@@ -35,28 +35,44 @@ def claim_next_task():
     return tasks[0] if tasks else None
 
 
-def complete_task(task_id):
+def complete_task(task_id, elapsed_seconds=0):
     return execute_query(
-        "UPDATE BackgroundTasks SET Status = 'SUCCESS', FinishedAt = SYSDATETIMEOFFSET(), ErrorMessage = NULL WHERE TaskID = ?",
-        (task_id,),
+        """UPDATE BackgroundTasks
+           SET Status = 'SUCCESS',
+               StartedAt = COALESCE(StartedAt, DATEADD(second, -?, SYSDATETIMEOFFSET())),
+               FinishedAt = SYSDATETIMEOFFSET(),
+               ErrorMessage = NULL
+           WHERE TaskID = ?""",
+        (max(0, int(elapsed_seconds)), task_id),
     )
 
 
-def fail_task(task_id, error):
+def fail_task(task_id, error, elapsed_seconds=0):
     return execute_query(
-        "UPDATE BackgroundTasks SET Status = 'ERROR', FinishedAt = SYSDATETIMEOFFSET(), ErrorMessage = ? WHERE TaskID = ?",
-        (str(error)[:4000], task_id),
+        """UPDATE BackgroundTasks
+           SET Status = 'ERROR',
+               StartedAt = COALESCE(StartedAt, DATEADD(second, -?, SYSDATETIMEOFFSET())),
+               FinishedAt = SYSDATETIMEOFFSET(),
+               ErrorMessage = ?
+           WHERE TaskID = ?""",
+        (max(0, int(elapsed_seconds)), str(error)[:4000], task_id),
     )
 
 
-def recover_interrupted_tasks():
+def recover_interrupted_tasks(stale_minutes=120):
+    """Requeue only jobs that have plausibly been abandoned by a stopped worker."""
     return execute_query(
-        "UPDATE BackgroundTasks SET Status = 'QUEUED', StartedAt = NULL WHERE Status = 'PROCESSING'"
+        """UPDATE BackgroundTasks
+           SET Status = 'QUEUED', StartedAt = NULL
+           WHERE Status = 'PROCESSING'
+             AND (StartedAt IS NULL OR StartedAt < DATEADD(minute, -?, SYSDATETIMEOFFSET()))""",
+        (stale_minutes,),
     )
 
 
 def run_worker(app, poll_seconds=2):
-    recover_interrupted_tasks()
+    stale_minutes = int(app.config.get("TASK_RECOVERY_MINUTES", 120))
+    recover_interrupted_tasks(stale_minutes)
     logging.info("Background task worker started")
     while True:
         task = claim_next_task()
@@ -64,6 +80,7 @@ def run_worker(app, poll_seconds=2):
             time.sleep(poll_seconds)
             continue
 
+        task_started_at = time.monotonic()
         try:
             payload = json.loads(task["PayloadJson"])
             if task["TaskType"] == "mapping":
@@ -78,12 +95,12 @@ def run_worker(app, poll_seconds=2):
                 raise ValueError(f"Unsupported task type: {task['TaskType']}")
 
             if success:
-                complete_task(task["TaskID"])
+                complete_task(task["TaskID"], time.monotonic() - task_started_at)
             else:
-                fail_task(task["TaskID"], "PDF processing did not complete successfully")
+                fail_task(task["TaskID"], "PDF processing did not complete successfully", time.monotonic() - task_started_at)
         except Exception as error:
             logging.exception("Background task failed: %s", task["TaskID"])
-            fail_task(task["TaskID"], error)
+            fail_task(task["TaskID"], error, time.monotonic() - task_started_at)
 
 
 def main():

@@ -186,6 +186,80 @@
             })
         });
 
+        function updateTaskBadge(taskId, status) {
+            const badge = document.getElementById(`status-badge-${taskId}`);
+            if (!badge || status !== 'PROCESSING') return;
+
+            badge.outerHTML = `
+                <span id="status-badge-${taskId}" class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-10 fw-normal d-flex align-items-center gap-1 processing-badge" style="width: fit-content;">
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="width: 0.7rem; height: 0.7rem;"></span>
+                    processing...
+                </span>`;
+        }
+
+        function formatTaskDuration(totalSeconds) {
+            const seconds = Math.max(0, Math.floor(totalSeconds));
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const remainingSeconds = seconds % 60;
+            if (hours) return `${hours} 小時 ${minutes} 分 ${remainingSeconds} 秒`;
+            if (minutes) return `${minutes} 分 ${remainingSeconds} 秒`;
+            return `${remainingSeconds} 秒`;
+        }
+
+        function refreshTaskElapsedTimes() {
+            document.querySelectorAll('.task-elapsed').forEach((element) => {
+                const startedAt = Date.parse(element.dataset.startedAt);
+                if (Number.isNaN(startedAt)) {
+                    if (element.dataset.taskStatus === 'PROCESSING') {
+                        element.textContent = '處理中';
+                    } else {
+                        element.textContent = element.dataset.finishedAt ? '已完成(未記錄處理時間)' : '等待處理';
+                    }
+                    return;
+                }
+                const finishedAt = Date.parse(element.dataset.finishedAt);
+                const endTime = Number.isNaN(finishedAt) ? Date.now() : finishedAt;
+                const label = Number.isNaN(finishedAt) ? '已處理：' : '處理耗時：';
+                element.textContent = `${label}${formatTaskDuration((endTime - startedAt) / 1000)}`;
+            });
+        }
+
+        function updateTaskElapsedTime(taskId, status, startedAt, finishedAt) {
+            const elapsed = document.getElementById(`task-elapsed-${taskId}`);
+            if (!elapsed) return;
+            elapsed.dataset.taskStatus = status || '';
+            elapsed.dataset.startedAt = startedAt || '';
+            elapsed.dataset.finishedAt = finishedAt || '';
+            refreshTaskElapsedTimes();
+        }
+
+        async function refreshVisibleTaskStatuses(currentTasks) {
+            const requests = [
+                ...currentTasks.mapping.map(async (id) => {
+                    const response = await fetch(`/mapping/status/${id}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success) {
+                            updateTaskBadge(id, data.DiffPages);
+                            updateTaskElapsedTime(id, data.DiffPages, data.StartedAt, data.FinishedAt);
+                        }
+                    }
+                }),
+                ...currentTasks.notes.map(async (id) => {
+                    const response = await fetch(`/notes/status/${id}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success) {
+                            updateTaskBadge(id, data.ResultName);
+                            updateTaskElapsedTime(id, data.ResultName, data.StartedAt, data.FinishedAt);
+                        }
+                    }
+                }),
+            ];
+            await Promise.all(requests);
+        }
+
         // Global Background Task Polling (Optimized to save resources)
         async function checkTasks() {
             try {
@@ -194,6 +268,8 @@
                 
                 const currentTasks = await res.json();
                 if (!currentTasks.mapping || !currentTasks.notes) return false;
+
+                await refreshVisibleTaskStatuses(currentTasks);
                 
                 let knownProcessingTasks = JSON.parse(localStorage.getItem('sys_processing_tasks') || '{"mapping": [], "notes": []}');
                 let reloaded = false;
@@ -243,6 +319,8 @@
 
         // Run once on load to determine if polling is needed
         checkTasks().then(hasActive => {
+            refreshTaskElapsedTimes();
+            setInterval(refreshTaskElapsedTimes, 1000);
             if (hasActive) {
                 // Only poll if there are active tasks
                 const pollInterval = setInterval(async () => {

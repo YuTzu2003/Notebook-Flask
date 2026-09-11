@@ -1,10 +1,11 @@
 import io
 import zipfile
 from flask import Blueprint, render_template, request, jsonify, send_file, session, send_from_directory, current_app
-from werkzeug.utils import secure_filename
 import os
 import uuid
 import shutil
+import re
+import unicodedata
 from modules.auth import login_required
 from modules.db import execute_query
 from modules.task_queue import enqueue_task
@@ -19,6 +20,28 @@ bp_notes = Blueprint('bp_notes', __name__)
 VERSION_Folder = 'tasks/docVersion'
 Mapping_Folder = "tasks/docMapResult"
 Note_Folder = 'tasks/note'
+
+
+def safe_upload_filename(filename):
+    """Keep readable Unicode filenames while excluding unsafe Windows path characters."""
+    filename = unicodedata.normalize("NFKC", str(filename or ""))
+    filename = filename.replace("\\", "/").rsplit("/", 1)[-1]
+    filename = re.sub(r'[\x00-\x1f<>:"/\\|?*]', "", filename).strip().rstrip(". ")
+
+    if filename in {"", ".", ".."}:
+        return ""
+
+    stem, extension = os.path.splitext(filename)
+    reserved_names = {
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5",
+        "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5",
+        "LPT6", "LPT7", "LPT8", "LPT9",
+    }
+    if stem.upper() in reserved_names:
+        stem = f"_{stem}"
+
+    # Leave room for the "Move_" prefix and stay within common Windows filename limits.
+    return f"{stem[:235 - len(extension)]}{extension}"
 
 def run_migrate_background(app, transfer_id, old_pdf_path, new_pdf_path, csv_mapping, output_pdf, diff_pages_str, output_filename, json_path):
     with app.app_context():
@@ -77,7 +100,7 @@ def notes_page():
     
     mapping_history = execute_query(sql_mapping)    
     sql_history = f"""SELECT H.TransferID, H.SourceFileName,H.ResultName,H.CreateTime,V_Old.Version AS OldV, V_New.Version AS NewV,
-                    BackgroundTasks.Status AS TaskStatus
+                    BackgroundTasks.Status AS TaskStatus, BackgroundTasks.StartedAt, BackgroundTasks.FinishedAt
                     FROM dbo.NoteTransferHistory H
                     LEFT JOIN MappingRecord M ON H.MappingID = M.RecordID
                     LEFT JOIN DocVersion V_Old ON M.OldDocID = V_Old.ID
@@ -126,7 +149,7 @@ def migrate_pdf_api():
         note_dir = os.path.join("tasks/note", TransferID if TransferID.startswith("note") else f"note{TransferID}")
         os.makedirs(note_dir, exist_ok=True)
         
-        original_filename = secure_filename(pdf_with_notes.filename)
+        original_filename = safe_upload_filename(pdf_with_notes.filename)
         if not original_filename:
             return jsonify({"status": "error", "message": "檔名無效"}), 400
         user_pdf_path = os.path.join(note_dir, original_filename)
@@ -236,8 +259,17 @@ def notes_action():
 @bp_notes.route("/notes/status/<transfer_id>", methods=["GET"])
 @login_required
 def notes_status(transfer_id):
-    sql = "SELECT ResultName FROM dbo.NoteTransferHistory WHERE TransferID = ? AND UserID = ?"
+    sql = """SELECT H.ResultName, T.StartedAt, T.FinishedAt
+             FROM dbo.NoteTransferHistory H
+             LEFT JOIN dbo.BackgroundTasks T ON T.TaskID = H.TransferID
+             WHERE H.TransferID = ? AND H.UserID = ?"""
     result = execute_query(sql, (transfer_id, session.get("ID")))
     if result:
-        return jsonify({"success": True, "ResultName": result[0]["ResultName"]})
+        row = result[0]
+        return jsonify({
+            "success": True,
+            "ResultName": row["ResultName"],
+            "StartedAt": row["StartedAt"].isoformat() if row["StartedAt"] else None,
+            "FinishedAt": row["FinishedAt"].isoformat() if row["FinishedAt"] else None,
+        })
     return jsonify({"success": False}), 404

@@ -29,6 +29,22 @@ class TaskQueueTest(unittest.TestCase):
         self.assertEqual(tasks, {"mapping": ["map123"], "notes": ["note456"]})
         self.assertEqual(execute_query.call_args.args[1], ("user-uuid",))
 
+    @patch.object(task_queue, "execute_query", return_value=True)
+    def test_recovery_only_requeues_stale_processing_tasks(self, execute_query):
+        task_queue.recover_interrupted_tasks(120)
+
+        sql, params = execute_query.call_args.args
+        self.assertIn("StartedAt < DATEADD", sql)
+        self.assertEqual(params, (120,))
+
+    @patch.object(task_queue, "execute_query", return_value=True)
+    def test_completion_backfills_a_missing_start_time(self, execute_query):
+        task_queue.complete_task("note123", 42.8)
+
+        sql, params = execute_query.call_args.args
+        self.assertIn("COALESCE(StartedAt", sql)
+        self.assertEqual(params, (42, "note123"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -106,6 +106,9 @@
                                             <span style="font-size: 0.8rem;">執行時間：</span>
                                             <span class="text-dark fw-bold">{{ row.CreateTime.strftime('%Y-%m-%d %H:%M') }}</span>
                                         </div>
+                                        <div id="task-elapsed-{{ row.RecordID }}" class="task-elapsed small" data-task-status="{{ row.DiffPages }}" data-started-at="{{ row.StartedAt.isoformat() if row.StartedAt else '' }}" data-finished-at="{{ row.FinishedAt.isoformat() if row.FinishedAt else '' }}">
+                                            {% if row.StartedAt %}處理時間計算中…{% elif row.FinishedAt %}已完成(未記錄處理時間){% else %}等待處理{% endif %}
+                                        </div>
                                         <div>
                                             {% if row.DiffPages == 'QUEUED' %}
                                                 <span id="status-badge-{{ row.RecordID }}" class="badge bg-warning bg-opacity-10 text-dark border border-warning border-opacity-25 fw-normal">queued</span>

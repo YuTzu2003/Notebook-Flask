@@ -99,6 +99,9 @@
                                             <span style="font-size: 0.8rem;">轉移時間：</span>
                                             <span class="text-dark fw-bold">{{ row.CreateTime.strftime('%Y-%m-%d %H:%M') }}</span>
                                         </div>
+                                        <div id="task-elapsed-{{ row.TransferID }}" class="task-elapsed small" data-task-status="{{ row.ResultName }}" data-started-at="{{ row.StartedAt.isoformat() if row.StartedAt else '' }}" data-finished-at="{{ row.FinishedAt.isoformat() if row.FinishedAt else '' }}">
+                                            {% if row.StartedAt %}處理時間計算中…{% elif row.FinishedAt %}已完成(未記錄處理時間){% else %}等待處理{% endif %}
+                                        </div>
                                         <div id="status-container-{{ row.TransferID }}">
                                             {% if row.ResultName == 'QUEUED' %}
                                                 <span id="status-badge-{{ row.TransferID }}" class="badge bg-warning bg-opacity-10 text-dark border border-warning border-opacity-25 fw-normal">queued</span>

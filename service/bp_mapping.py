@@ -8,11 +8,29 @@ from modules.mapping.mapping import UseMapping as process_and_match_pdfs
 from modules.mapping.pdf_diff import highlight_and_bookmark_diffs
 import threading
 import json
+import shutil
 
 bp_mapping = Blueprint('bp_mapping', __name__)
 VERSION_Folder = 'tasks/docVersion'
 Mapping_Folder = "tasks/docMapResult"
 Note_Folder = 'tasks/note'
+
+
+def delete_mapping_artifacts(record_id):
+    """Remove a mapping's queued work and every file stored beneath its task folders."""
+    transfer_rows = execute_query(
+        "SELECT TransferID FROM NoteTransferHistory WHERE MappingID = ?", (record_id,)
+    )
+
+    # Remove queued/finished task records first so a deleted mapping cannot be claimed later.
+    execute_query("DELETE FROM BackgroundTasks WHERE TaskID = ?", (record_id,))
+    for row in transfer_rows:
+        transfer_id = row["TransferID"]
+        execute_query("DELETE FROM BackgroundTasks WHERE TaskID = ?", (transfer_id,))
+        shutil.rmtree(os.path.join(Note_Folder, transfer_id), ignore_errors=True)
+
+    execute_query("DELETE FROM NoteTransferHistory WHERE MappingID = ?", (record_id,))
+    shutil.rmtree(os.path.join(Mapping_Folder, record_id), ignore_errors=True)
 
 @bp_mapping.route("/mapping", methods=["GET"])
 @login_required
@@ -22,7 +40,7 @@ def mapping_page():
     sql_history = """
                     SELECT  MappingRecord.RecordID, Users.Name, DocVersion_Old.FileName AS OldFileName, DocVersion_Old.Version AS OldVersion, 
                             DocVersion_New.FileName AS NewFileName, DocVersion_New.Version AS NewVersion, MappingRecord.Status, dbo.MappingRecord.CreateTime, 
-                            MappingRecord.IsPublish, BackgroundTasks.Status AS TaskStatus
+                            MappingRecord.IsPublish, BackgroundTasks.Status AS TaskStatus, BackgroundTasks.StartedAt, BackgroundTasks.FinishedAt
                     FROM MappingRecord INNER JOIN Users ON MappingRecord.Creator = Users.ID 
                     LEFT OUTER JOIN DocVersion AS DocVersion_Old ON MappingRecord.OldDocID = DocVersion_Old.ID 
                     LEFT OUTER JOIN DocVersion AS DocVersion_New ON MappingRecord.NewDocID = DocVersion_New.ID
@@ -212,30 +230,7 @@ def mapping_tool():
     record_id = data.get("record_id")
 
     if action == "delete":
-        sql_find_history = "SELECT ResultName FROM NoteTransferHistory WHERE MappingID = ?"
-        history_files = execute_query(sql_find_history, (record_id,))
-        
-        for h in history_files:
-            h_path = os.path.join(Note_Folder, h['ResultName'])
-            if os.path.exists(h_path):
-                os.remove(h_path) 
-        execute_query("DELETE FROM NoteTransferHistory WHERE MappingID = ?", (record_id,))
-
-        project_folder = os.path.join(Mapping_Folder, record_id)
-        csv_path = os.path.join(project_folder, f"{record_id}.csv")
-        pdf_path = os.path.join(project_folder, f"{record_id}.pdf")
-        template_pdf_path = os.path.join(project_folder, f"{record_id}_template.pdf")
-        json_path = os.path.join(project_folder, f"{record_id}.json")
-        if os.path.exists(csv_path):
-            os.remove(csv_path)
-        if os.path.exists(pdf_path):
-            os.remove(pdf_path)
-        if os.path.exists(template_pdf_path):
-            os.remove(template_pdf_path)
-        if os.path.exists(json_path):
-            os.remove(json_path)
-        if os.path.exists(project_folder) and not os.listdir(project_folder):
-            os.rmdir(project_folder)
+        delete_mapping_artifacts(record_id)
 
         if execute_query("DELETE FROM MappingRecord WHERE RecordID = ?", (record_id,)):
             return jsonify({"success": True, "message": "比對紀錄及其相關轉移紀錄已全數刪除"})
@@ -284,30 +279,7 @@ def mapping_action():
         record_ids = request.form.getlist("doc_ids")
         success_count = 0
         for rid in record_ids:
-            sql_find_history = "SELECT ResultName FROM NoteTransferHistory WHERE MappingID = ?"
-            history_files = execute_query(sql_find_history, (rid,))
-            
-            for h in history_files:
-                h_path = os.path.join(Note_Folder, h['ResultName'])
-                if os.path.exists(h_path):
-                    os.remove(h_path) 
-            execute_query("DELETE FROM NoteTransferHistory WHERE MappingID = ?", (rid,))
-
-            project_folder = os.path.join(Mapping_Folder, rid)
-            csv_path = os.path.join(project_folder, f"{rid}.csv")
-            pdf_path = os.path.join(project_folder, f"{rid}.pdf")
-            template_pdf_path = os.path.join(project_folder, f"{rid}_template.pdf")
-            json_path = os.path.join(project_folder, f"{rid}.json")
-            if os.path.exists(csv_path):
-                os.remove(csv_path)
-            if os.path.exists(pdf_path):
-                os.remove(pdf_path)
-            if os.path.exists(template_pdf_path):
-                os.remove(template_pdf_path)
-            if os.path.exists(json_path):
-                os.remove(json_path)
-            if os.path.exists(project_folder) and not os.listdir(project_folder):
-                os.rmdir(project_folder)
+            delete_mapping_artifacts(rid)
             if execute_query("DELETE FROM MappingRecord WHERE RecordID = ?", (rid,)):
                 success_count += 1
         flash(f'成功刪除 {success_count} 筆紀錄', 'success')
@@ -329,7 +301,10 @@ def mapping_action():
 @bp_mapping.route("/mapping/status/<record_id>", methods=["GET"])
 @login_required
 def mapping_status(record_id):
-    sql = "SELECT Status FROM MappingRecord WHERE RecordID = ?"
+    sql = """SELECT M.Status, T.Status AS TaskStatus, T.StartedAt, T.FinishedAt
+             FROM MappingRecord M
+             LEFT JOIN BackgroundTasks T ON T.TaskID = M.RecordID
+             WHERE M.RecordID = ?"""
     result = execute_query(sql, (record_id,))
     if result:
         status_str = 'ERROR'
@@ -343,9 +318,19 @@ def mapping_status(record_id):
             except Exception:
                 pass
         else:
-            if result[0]["Status"] == 1:
+            task_status = result[0]["TaskStatus"]
+            if task_status in {"QUEUED", "PROCESSING", "ERROR"}:
+                status_str = task_status
+            elif result[0]["Status"] == 1:
                 status_str = 'SUCCESS'
             else:
-                status_str = 'PROCESSING'
-        return jsonify({"success": True, "Status": result[0]["Status"], "DiffPages": status_str})
+                status_str = 'ERROR'
+        row = result[0]
+        return jsonify({
+            "success": True,
+            "Status": row["Status"],
+            "DiffPages": status_str,
+            "StartedAt": row["StartedAt"].isoformat() if row["StartedAt"] else None,
+            "FinishedAt": row["FinishedAt"].isoformat() if row["FinishedAt"] else None,
+        })
     return jsonify({"success": False}), 404
