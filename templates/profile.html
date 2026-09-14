@@ -5,13 +5,14 @@
     <div class="card shadow-sm border-0 rounded-3">
         <div class="card-body p-4 p-md-5">
             <h1 class="h4 mb-2">使用者資訊</h1>
-            <p class="text-muted small mb-4">檢視目前登入帳號的基本資料與密碼設定。</p>
+            <p class="text-muted small mb-4">檢視目前登入帳號的基本資料、Email 與密碼設定。</p>
 
             <dl class="row small mb-4">
                 <dt class="col-sm-4 text-muted">姓名</dt><dd class="col-sm-8">{{ user.Name if user else '-' }}</dd>
                 <dt class="col-sm-4 text-muted">帳號</dt><dd class="col-sm-8">{{ user.UserID if user else '-' }}</dd>
                 <dt class="col-sm-4 text-muted">職位</dt><dd class="col-sm-8">{{ user.Position if user else '-' }}</dd>
                 <dt class="col-sm-4 text-muted">院區</dt><dd class="col-sm-8">{{ user.Location if user else '-' }}</dd>
+                <dt class="col-sm-4 text-muted">Email</dt><dd class="col-sm-8">{% if user and user.EmailVerifiedAt %}{{ user.Email }} <span class="badge text-bg-success ms-1">已驗證</span>{% else %}尚未綁定{% endif %}</dd>
             </dl>
 
             {% with messages = get_flashed_messages(with_categories=true) %}
@@ -22,6 +23,53 @@
                 {% endfor %}
             {% endwith %}
 
+            <div class="border-top pt-4 mb-4">
+                {% if request.args.get('verify_email') and user and user.EmailVerifiedAt %}
+                    <h2 class="h6">變更綁定 Email</h2>
+                {% elif user and user.EmailVerifiedAt %}
+                    <h2 class="h6">帳號設定</h2>
+                    {% if request.args.get('email_bound') %}
+                    <p class="text-success small mb-0">Email 綁定完成，3 秒後將自動前往主畫面。</p>
+                    {% endif %}
+                {% else %}
+                    <h2 class="h6">綁定 Email</h2>
+                    <p class="text-muted small">請先綁定 Email，日後才能使用忘記密碼功能。</p>
+                {% endif %}
+                {% if request.args.get('verify_email') %}
+                <form method="post" action="{{ url_for('auth.verify_email') }}" class="mt-3">
+                    <label for="email_code" class="form-label small">請輸入 Email 收到的六位數驗證碼</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="email_code" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code">
+                        <button class="btn btn-dark" type="submit">傳送</button>
+                    </div>
+                </form>
+                <div class="d-flex gap-2 mt-3">
+                    <form method="post" action="{{ url_for('auth.resend_email_verification') }}">
+                        <button class="btn btn-sm btn-outline-secondary" type="submit">重新寄送驗證碼</button>
+                    </form>
+                    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('auth.profile', setup_email=1) }}">更換 Email</a>
+                </div>
+                {% elif user and user.EmailVerifiedAt %}
+                <button class="btn btn-outline-dark mt-3" type="button" data-bs-toggle="collapse" data-bs-target="#changeEmailForm" aria-expanded="false" aria-controls="changeEmailForm">變更綁定 Email</button>
+                <div class="collapse mt-3" id="changeEmailForm">
+                    <form method="post" action="{{ url_for('auth.request_email_verification') }}">
+                        <label class="form-label small" for="replacement_email">新的 Email</label>
+                        <div class="input-group">
+                            <input type="email" class="form-control" id="replacement_email" name="email" required autocomplete="email">
+                            <button class="btn btn-outline-dark" type="submit">寄送驗證碼</button>
+                        </div>
+                    </form>
+                </div>
+                {% else %}
+                <form method="post" action="{{ url_for('auth.request_email_verification') }}" class="mt-3">
+                    <div class="input-group">
+                        <input type="email" class="form-control" name="email" value="{{ user.Email if user and user.Email else '' }}" required autocomplete="email">
+                        <button class="btn btn-outline-dark" type="submit">寄送驗證碼</button>
+                    </div>
+                </form>
+                {% endif %}
+            </div>
+
             <button class="btn btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#changePasswordForm" aria-expanded="{{ 'true' if show_password_form else 'false' }}" aria-controls="changePasswordForm">
                 變更密碼
             </button>
@@ -30,15 +78,15 @@
             <form method="post" class="border-top pt-4">
                 <div class="mb-3">
                     <label for="current_password" class="form-label">目前密碼</label>
-                    <input type="password" class="form-control" id="current_password" name="current_password" autocomplete="current-password" required>
+                    <div class="input-group"><input type="password" class="form-control" id="current_password" name="current_password" autocomplete="current-password" required><button class="btn btn-outline-secondary" type="button" data-password-toggle="current_password" aria-label="顯示密碼" title="顯示密碼">👁</button></div>
                 </div>
                 <div class="mb-3">
                     <label for="new_password" class="form-label">新密碼</label>
-                    <input type="password" class="form-control" id="new_password" name="new_password" autocomplete="new-password" required>
+                    <div class="input-group"><input type="password" class="form-control" id="new_password" name="new_password" autocomplete="new-password" required><button class="btn btn-outline-secondary" type="button" data-password-toggle="new_password" aria-label="顯示密碼" title="顯示密碼">👁</button></div>
                 </div>
                 <div class="mb-4">
                     <label for="confirm_password" class="form-label">確認新密碼</label>
-                    <input type="password" class="form-control" id="confirm_password" name="confirm_password" autocomplete="new-password" required>
+                    <div class="input-group"><input type="password" class="form-control" id="confirm_password" name="confirm_password" autocomplete="new-password" required><button class="btn btn-outline-secondary" type="button" data-password-toggle="confirm_password" aria-label="顯示密碼" title="顯示密碼">👁</button></div>
                 </div>
                 <div class="d-flex justify-content-end gap-2">
                     <button type="button" class="btn btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#changePasswordForm">取消</button>
@@ -49,4 +97,20 @@
         </div>
     </div>
 </div>
+{% endblock %}
+{% block extra_js %}
+<script>
+document.querySelectorAll('[data-password-toggle]').forEach((button) => {
+    button.addEventListener('click', () => {
+        const input = document.getElementById(button.dataset.passwordToggle);
+        const visible = input.type === 'text';
+        input.type = visible ? 'password' : 'text';
+        button.setAttribute('aria-label', visible ? '顯示密碼' : '隱藏密碼');
+        button.title = visible ? '顯示密碼' : '隱藏密碼';
+    });
+});
+{% if request.args.get('redirect_home') %}
+setTimeout(() => { window.location.href = "{{ url_for('bp_index.index') }}"; }, 3000);
+{% endif %}
+</script>
 {% endblock %}

@@ -20,6 +20,30 @@ IF COL_LENGTH(N'dbo.Users', N'Password') < 512
     ALTER TABLE dbo.Users ALTER COLUMN Password nvarchar(512) NULL;
 GO
 
+IF COL_LENGTH(N'dbo.Users', N'Email') IS NULL
+    ALTER TABLE dbo.Users ADD Email nvarchar(254) NULL;
+IF COL_LENGTH(N'dbo.Users', N'EmailVerifiedAt') IS NULL
+    ALTER TABLE dbo.Users ADD EmailVerifiedAt datetimeoffset(7) NULL;
+GO
+
+IF OBJECT_ID(N'dbo.AccountVerificationCodes', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.AccountVerificationCodes (
+        CodeID uniqueidentifier NOT NULL CONSTRAINT PK_AccountVerificationCodes PRIMARY KEY DEFAULT NEWID(),
+        UserID uniqueidentifier NOT NULL,
+        Purpose varchar(30) NOT NULL,
+        Email nvarchar(254) NULL,
+        CodeHash nvarchar(512) NOT NULL,
+        Attempts int NOT NULL CONSTRAINT DF_AccountVerificationCodes_Attempts DEFAULT 0,
+        CreatedAt datetimeoffset(7) NOT NULL CONSTRAINT DF_AccountVerificationCodes_CreatedAt DEFAULT SYSDATETIMEOFFSET(),
+        ExpiresAt datetimeoffset(7) NOT NULL,
+        UsedAt datetimeoffset(7) NULL,
+        CONSTRAINT CK_AccountVerificationCodes_Purpose CHECK (Purpose IN ('verify_email', 'reset_password')),
+        CONSTRAINT FK_AccountVerificationCodes_Users FOREIGN KEY (UserID) REFERENCES dbo.Users(ID)
+    );
+END
+GO
+
 IF NOT EXISTS (
     SELECT 1
     FROM dbo.Users
@@ -177,4 +201,8 @@ GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Audit_logs_User_id_CreatedAt' AND object_id = OBJECT_ID(N'dbo.Audit_logs'))
     CREATE INDEX IX_Audit_logs_User_id_CreatedAt ON dbo.Audit_logs(User_id, CreatedAt DESC);
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_AccountVerificationCodes_User_Purpose' AND object_id = OBJECT_ID(N'dbo.AccountVerificationCodes'))
+    CREATE INDEX IX_AccountVerificationCodes_User_Purpose ON dbo.AccountVerificationCodes(UserID, Purpose, CreatedAt DESC);
 GO

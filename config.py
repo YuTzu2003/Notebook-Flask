@@ -24,6 +24,9 @@ def get_settings():
     if is_production and (len(secret_key) < 32 or secret_key in weak_secrets):
         raise RuntimeError("Production SECRET_KEY must contain at least 32 characters.")
 
+    gmail_api_enabled = _get_bool("GMAIL_API_ENABLED", False)
+    gmail_smtp_enabled = _get_bool("GMAIL_SMTP_ENABLED", False)
+
     return {
         "APP_ENV": app_env,
         "DEBUG": False if is_production else _get_bool("APP_DEBUG", True),
@@ -44,4 +47,17 @@ def get_settings():
         "SESSION_COOKIE_SECURE": _get_bool("SESSION_COOKIE_SECURE", False),
         "PERMANENT_SESSION_LIFETIME": _get_int("SESSION_LIFETIME_SECONDS", 28800),
         "MAX_CONTENT_LENGTH": _get_int("MAX_UPLOAD_MB", 200) * 1024 * 1024,
+        "GMAIL_API_ENABLED": gmail_api_enabled,
+        "GMAIL_SMTP_ENABLED": gmail_smtp_enabled,
+        "EMAIL_VERIFICATION_ENABLED": _get_bool(
+            "EMAIL_VERIFICATION_ENABLED", gmail_api_enabled or gmail_smtp_enabled
+        ),
+        "GMAIL_SENDER_EMAIL": os.getenv("GMAIL_SENDER_EMAIL", "").strip(),
+        "GMAIL_SMTP_APP_PASSWORD": os.getenv("GMAIL_SMTP_APP_PASSWORD", "").replace(" ", ""),
+        "GMAIL_OAUTH_CLIENT_ID": os.getenv("GMAIL_OAUTH_CLIENT_ID", "").strip(),
+        "GMAIL_OAUTH_CLIENT_SECRET": os.getenv("GMAIL_OAUTH_CLIENT_SECRET", "").strip(),
+        "GMAIL_OAUTH_REFRESH_TOKEN": os.getenv("GMAIL_OAUTH_REFRESH_TOKEN", "").strip(),
+        "PASSWORD_CODE_MINUTES": _get_int("PASSWORD_CODE_MINUTES", 10),
+        "VERIFICATION_CODE_RESEND_SECONDS": _get_int("VERIFICATION_CODE_RESEND_SECONDS", 60),
+        "VERIFICATION_CODE_MAX_PER_HOUR": _get_int("VERIFICATION_CODE_MAX_PER_HOUR", 5),
     }

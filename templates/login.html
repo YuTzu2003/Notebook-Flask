@@ -28,21 +28,25 @@
                         <label for="empIdInput">帳號</label>
                     </div>
 
-                    <div class="form-floating mb-4">
-                        <input type="password" class="form-control" id="passwordInput" name="password" placeholder="密碼" required>
+                    <div class="form-floating mb-4 position-relative">
+                        <input type="password" class="form-control pe-5" id="passwordInput" name="password" placeholder="密碼" required>
                         <label for="passwordInput">密碼</label>
+                        <button class="btn btn-link text-secondary position-absolute top-0 end-0 h-100 px-3" type="button" id="showLoginPassword" aria-label="顯示密碼" title="顯示密碼"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13.1 13.1 0 0 1 1.66-2.043C4.12 4.6 5.74 3.5 8 3.5s3.88 1.1 5.167 2.457A13.1 13.1 0 0 1 14.827 8c-.175.27-.422.64-.738 1.043C12.803 10.7 11.18 12.5 8 12.5s-4.803-1.8-6.089-3.457A13.1 13.1 0 0 1 1.173 8"/><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5M6.5 8a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0"/></svg></button>
                     </div>
 
                     <div class="d-grid gap-2">
                         <button type="submit" class="btn btn-dark shadow-sm">登入</button>
                     </div>
                 </form>
+                <div class="text-center mt-3">
+                    <a class="small text-secondary" href="{{ url_for('auth.forgot_password') }}">忘記密碼？</a>
+                </div>
 
-                {% with messages = get_flashed_messages() %}
+                {% with messages = get_flashed_messages(with_categories=true) %}
                     {% if messages %}
                         <div class="mt-4">
-                            {% for msg in messages %}
-                                <div class="alert alert-custom d-flex align-items-center fade show" role="alert">
+                            {% for category, msg in messages %}
+                                <div class="alert alert-custom {{ 'alert-success' if category == 'success' else '' }} d-flex align-items-center fade show" role="alert">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" class="bi bi-exclamation-circle-fill me-2" viewBox="0 0 16 16">
                                         <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM8 4a.905.905 0 0 0-.9.995l.35 3.507a.552.552 0 0 0 1.1 0l.35-3.507A.905.905 0 0 0 8 4zm.002 6a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/>
                                     </svg>
@@ -60,5 +64,14 @@
         </div>
     </div>
     <script src="/static/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.getElementById('showLoginPassword')?.addEventListener('click', function () {
+            const input = document.getElementById('passwordInput');
+            const visible = input.type === 'text';
+            input.type = visible ? 'password' : 'text';
+            this.setAttribute('aria-label', visible ? '顯示密碼' : '隱藏密碼');
+            this.title = visible ? '顯示密碼' : '隱藏密碼';
+        });
+    </script>
 </body>
 </html>

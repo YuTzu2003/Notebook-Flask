@@ -55,8 +55,18 @@ function openModal(mode, userData = null) {
     userModal.show();
 }
 
+function showAdminMessage(icon, title, text = '') {
+    Swal.fire({
+        icon,
+        title,
+        text,
+        confirmButtonText: '確定',
+        confirmButtonColor: '#212529'
+    });
+}
+
 // 儲存
-function saveUser() {
+async function saveUser() {
     const action = document.getElementById('actionType').value;
     
     const data = {
@@ -69,61 +79,70 @@ function saveUser() {
         location: document.getElementById('userLocation').value
     };
 
-    if (!data.user_id || !data.name) {
-        alert("請填寫編號與姓名！");
+    if (!data.user_id || !data.name || (action === 'add' && !data.password)) {
+        showAdminMessage('warning', '請完整填寫必要欄位', action === 'add' ? '新增使用者時，編號、姓名與密碼皆為必填。' : '請填寫編號與姓名。');
         return;
     }
 
     const saveBtn = document.querySelector('#userModal .btn-dark');
     const originalText = saveBtn.innerText;
     saveBtn.disabled = true;
-    saveBtn.innerText = "process...";
+    saveBtn.innerText = "儲存中…";
 
-    fetch('/admin/manage_user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-    })
-    .then(res => res.json())
-    .then(result => {
+    try {
+        const response = await fetch('/admin/manage_user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        const result = await response.json();
         if (result.success) {
             location.reload(); 
         } else {
-            alert("操作失敗：" + (result.message || "未知錯誤"));
-            saveBtn.disabled = false;
-            saveBtn.innerText = originalText;
+            showAdminMessage('error', '操作失敗', result.message || '請稍後再試。');
         }
-    })
-    .catch(err => {
+    } catch (err) {
         console.error(err);
-        alert("發生錯誤");
+        showAdminMessage('error', '系統連線失敗', '請確認網路後再試一次。');
+    } finally {
         saveBtn.disabled = false;
         saveBtn.innerText = originalText;
-    });
+    }
 }
 
 // 刪除
-function deleteUser(guid, displayId) {
-    if (!confirm(`確定要刪除此編號 ${displayId}？`)) return;
+async function deleteUser(guid, displayId) {
+    const confirmation = await Swal.fire({
+        icon: 'warning',
+        title: '確定刪除使用者？',
+        text: `帳號：${displayId}，刪除後將無法復原。`,
+        showCancelButton: true,
+        confirmButtonText: '刪除',
+        cancelButtonText: '取消',
+        confirmButtonColor: '#b02a37'
+    });
+    if (!confirmation.isConfirmed) return;
 
     const data = {
         action: 'delete',
         id: guid 
     };
 
-    fetch('/admin/manage_user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-    })
-    .then(res => res.json())
-    .then(result => {
+    try {
+        const response = await fetch('/admin/manage_user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        const result = await response.json();
         if (result.success) {
             location.reload();
         } else {
-            alert("刪除失敗：" + result.message);
+            showAdminMessage('error', '刪除失敗', result.message || '請稍後再試。');
         }
-    })
-    .catch(err => console.error(err));
+    } catch (err) {
+        console.error(err);
+        showAdminMessage('error', '系統連線失敗', '請確認網路後再試一次。');
+    }
 }
 

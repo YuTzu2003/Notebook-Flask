@@ -1,12 +1,113 @@
 import os
-from flask import Blueprint, jsonify, render_template, request, redirect, url_for, session, flash
+import re
+from flask import Blueprint, current_app, jsonify, render_template, request, redirect, url_for, session, flash
 from functools import wraps
 import secrets
 from werkzeug.security import check_password_hash, generate_password_hash
 from modules.audit import write_audit_log
 from modules.db import get_conn
+from modules.gmail_mailer import MailDeliveryError, send_email
 
 auth_bp = Blueprint("auth", __name__, template_folder="../templates")
+EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+CODE_LENGTH = 6
+MAX_CODE_ATTEMPTS = 5
+
+
+class CodeRequestLimitError(RuntimeError):
+    pass
+
+
+def _valid_email(email):
+    return len(email) <= 254 and bool(EMAIL_PATTERN.fullmatch(email))
+
+
+def _new_code():
+    return f"{secrets.randbelow(1_000_000):0{CODE_LENGTH}d}"
+
+
+def _send_code(user_id, purpose, email):
+    """Invalidate earlier codes and issue one short-lived code for this account."""
+    code = _new_code()
+    minutes = current_app.config["PASSWORD_CODE_MINUTES"]
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        resend_seconds = current_app.config["VERIFICATION_CODE_RESEND_SECONDS"]
+        max_per_hour = current_app.config["VERIFICATION_CODE_MAX_PER_HOUR"]
+        cursor.execute("""SELECT COUNT(*) FROM AccountVerificationCodes
+                          WHERE UserID = ? AND CreatedAt > DATEADD(second, ?, SYSDATETIMEOFFSET())""",
+                       (user_id, -resend_seconds))
+        if cursor.fetchone()[0]:
+            raise CodeRequestLimitError(f"請於 {resend_seconds} 秒後再重新寄送驗證碼。")
+        cursor.execute("""SELECT COUNT(*) FROM AccountVerificationCodes
+                          WHERE UserID = ? AND CreatedAt > DATEADD(hour, -1, SYSDATETIMEOFFSET())""", (user_id,))
+        if cursor.fetchone()[0] >= max_per_hour:
+            raise CodeRequestLimitError("此帳號目前寄送驗證碼次數過多，請 1 小時後再試。")
+        cursor.execute("""UPDATE AccountVerificationCodes SET UsedAt = SYSDATETIMEOFFSET()
+                          WHERE UserID = ? AND Purpose = ? AND UsedAt IS NULL""", (user_id, purpose))
+        cursor.execute("""INSERT INTO AccountVerificationCodes
+                          (UserID, Purpose, Email, CodeHash, ExpiresAt)
+                          VALUES (?, ?, ?, ?, DATEADD(minute, ?, SYSDATETIMEOFFSET()))""",
+                       (user_id, purpose, email, generate_password_hash(code), minutes))
+        conn.commit()
+    finally:
+        conn.close()
+    subject = "臺大醫院PDF做筆記－驗證碼" if purpose == "verify_email" else "臺大醫院PDF做筆記－重設密碼驗證碼"
+    body = f"您的驗證碼為：{code}\n\n此驗證碼將於 {minutes} 分鐘後失效，且只能使用一次。若不是您本人操作，請忽略此信件。"
+    try:
+        send_email(current_app.config, email, subject, body)
+    except MailDeliveryError:
+        # A code that was not delivered must never remain usable.
+        conn = get_conn()
+        try:
+            conn.cursor().execute("UPDATE AccountVerificationCodes SET UsedAt = SYSDATETIMEOFFSET() WHERE UserID = ? AND Purpose = ? AND UsedAt IS NULL", (user_id, purpose))
+            conn.commit()
+        finally:
+            conn.close()
+        raise
+
+
+def _consume_code(user_id, purpose, code):
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""SELECT TOP 1 CodeID, Email, CodeHash, Attempts
+                          FROM AccountVerificationCodes
+                          WHERE UserID = ? AND Purpose = ? AND UsedAt IS NULL
+                            AND ExpiresAt > SYSDATETIMEOFFSET()
+                          ORDER BY CreatedAt DESC""", (user_id, purpose))
+        record = cursor.fetchone()
+        if not record or record.Attempts >= MAX_CODE_ATTEMPTS or not check_password_hash(record.CodeHash, code):
+            if record:
+                cursor.execute("UPDATE AccountVerificationCodes SET Attempts = Attempts + 1 WHERE CodeID = ?", (record.CodeID,))
+                conn.commit()
+            return None
+        cursor.execute("UPDATE AccountVerificationCodes SET UsedAt = SYSDATETIMEOFFSET() WHERE CodeID = ? AND UsedAt IS NULL", (record.CodeID,))
+        if cursor.rowcount != 1:
+            return None
+        conn.commit()
+        return record.Email
+    finally:
+        conn.close()
+
+
+@auth_bp.before_app_request
+def require_verified_email():
+    """Existing accounts enrol an email before accessing application features."""
+    if (not current_app.config["EMAIL_VERIFICATION_ENABLED"] or not session.get("ID")
+            or request.endpoint in {"static", "auth.profile", "auth.request_email_verification", "auth.verify_email", "auth.resend_email_verification", "auth.logout"}):
+        return None
+    conn = get_conn()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT EmailVerifiedAt FROM Users WHERE ID = ?", (session["ID"],))
+        user = cursor.fetchone()
+    finally:
+        conn.close()
+    if not user or not user.EmailVerifiedAt:
+        flash("請先綁定並驗證 Email，才能使用系統功能。", "error")
+        return redirect(url_for("auth.profile", setup_email=1))
 
 # 權限
 def login_required(func):
@@ -38,17 +139,17 @@ def profile():
 
         if not current_password or not new_password or not confirm_password:
             flash("請完整填寫所有密碼欄位。", "error")
-            return render_template("profile.html", show_password_form=True)
+            return redirect(url_for("auth.profile", show_password_form=1))
 
         if new_password != confirm_password:
             flash("新密碼與確認密碼不一致。", "error")
-            return render_template("profile.html", show_password_form=True)
+            return redirect(url_for("auth.profile", show_password_form=1))
 
         conn = get_conn()
         cursor = conn.cursor()
         try:
             cursor.execute(
-                "SELECT UserID, Name, Position, Location, Password FROM Users WHERE ID = ?",
+                "SELECT UserID, Name, Position, Location, Email, EmailVerifiedAt, Password FROM Users WHERE ID = ?",
                 (session["ID"],),
             )
             user = cursor.fetchone()
@@ -56,7 +157,7 @@ def profile():
             if not user or not password_matches(user.Password, current_password):
                 write_audit_log("auth_change_password_failed", {"reason": "current_password_incorrect"})
                 flash("目前密碼不正確。", "error")
-                return render_template("profile.html", user=user, show_password_form=True)
+                return redirect(url_for("auth.profile", show_password_form=1))
 
             cursor.execute(
                 "UPDATE Users SET Password = ? WHERE ID = ?",
@@ -73,11 +174,146 @@ def profile():
     conn = get_conn()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT UserID, Name, Position, Location FROM Users WHERE ID = ?", (session["ID"],))
+        cursor.execute("SELECT UserID, Name, Position, Location, Email, EmailVerifiedAt FROM Users WHERE ID = ?", (session["ID"],))
         user = cursor.fetchone()
     finally:
         conn.close()
-    return render_template("profile.html", user=user)
+    return render_template(
+        "profile.html",
+        user=user,
+        pending_email=session.get("pending_email"),
+        show_password_form=request.args.get("show_password_form") == "1",
+    )
+
+
+@auth_bp.post("/profile/email")
+@login_required
+def request_email_verification():
+    email = request.form.get("email", "").strip().lower()
+    if not _valid_email(email):
+        flash("請輸入有效的 Email。", "error")
+        return redirect(url_for("auth.profile", setup_email=1))
+    conn = get_conn()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT Email, EmailVerifiedAt FROM Users WHERE ID = ?", (session["ID"],))
+        user = cursor.fetchone()
+    finally:
+        conn.close()
+    if user and user.EmailVerifiedAt and str(user.Email).strip().lower() == email:
+        flash("此 Email 已完成綁定，無需再次驗證。", "success")
+        return redirect(url_for("auth.profile"))
+    try:
+        _send_code(session["ID"], "verify_email", email)
+    except (MailDeliveryError, CodeRequestLimitError) as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("auth.profile", setup_email=1))
+    session["pending_email"] = email
+    write_audit_log("auth_email_verification_requested")
+    flash(f"驗證碼已寄至 {email}，請至信箱查看。", "success")
+    return redirect(url_for("auth.profile", setup_email=1, verify_email=1))
+
+
+@auth_bp.post("/profile/email/verify")
+@login_required
+def verify_email():
+    code = request.form.get("code", "").strip()
+    if not re.fullmatch(r"\d{6}", code) or not (email := _consume_code(session["ID"], "verify_email", code)):
+        flash("驗證碼無效、已過期或輸入次數過多。", "error")
+        return redirect(url_for("auth.profile", setup_email=1, verify_email=1))
+    conn = get_conn()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT EmailVerifiedAt FROM Users WHERE ID = ?", (session["ID"],))
+        user = cursor.fetchone()
+        was_verified = bool(user and user.EmailVerifiedAt)
+        cursor.execute("UPDATE Users SET Email = ?, EmailVerifiedAt = SYSDATETIMEOFFSET() WHERE ID = ?", (email, session["ID"]))
+        conn.commit()
+    finally:
+        conn.close()
+    session.pop("pending_email", None)
+    write_audit_log("auth_email_verified")
+    flash("Email 已完成綁定。", "success")
+    if was_verified:
+        return redirect(url_for("auth.profile"))
+    return redirect(url_for("auth.profile", email_bound=1, redirect_home=1))
+
+
+@auth_bp.post("/profile/email/resend")
+@login_required
+def resend_email_verification():
+    email = session.get("pending_email", "")
+    if not _valid_email(email):
+        flash("請先輸入要綁定的 Email。", "error")
+        return redirect(url_for("auth.profile", setup_email=1))
+    try:
+        _send_code(session["ID"], "verify_email", email)
+    except (MailDeliveryError, CodeRequestLimitError) as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("auth.profile", setup_email=1, verify_email=1))
+    write_audit_log("auth_email_verification_resent")
+    flash(f"新的驗證碼已寄至 {email}，舊驗證碼已失效。", "success")
+    return redirect(url_for("auth.profile", setup_email=1, verify_email=1))
+
+
+@auth_bp.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        user_id = request.form.get("user_id", "").strip()
+        conn = get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT ID, Email FROM Users WHERE UserID = ? AND EmailVerifiedAt IS NOT NULL", (user_id,))
+            user = cursor.fetchone()
+        finally:
+            conn.close()
+        if user:
+            try:
+                _send_code(user.ID, "reset_password", user.Email)
+                write_audit_log("auth_password_reset_requested", user_id=user.ID)
+            except (MailDeliveryError, CodeRequestLimitError):
+                pass
+        # Do not reveal whether an ID or email binding exists.
+        flash("驗證碼已寄出，請至信箱查看。", "success")
+        return redirect(url_for("auth.reset_password", user_id=user_id, code_sent=1))
+    return render_template("forgot_password.html")
+
+
+@auth_bp.route("/reset-password", methods=["GET", "POST"])
+def reset_password():
+    if request.method == "GET":
+        return render_template(
+            "reset_password.html",
+            user_id=request.args.get("user_id", ""),
+            code_sent=request.args.get("code_sent") == "1",
+        )
+    user_id = request.form.get("user_id", "").strip()
+    code = request.form.get("code", "").strip()
+    new_password = request.form.get("new_password", "")
+    confirm_password = request.form.get("confirm_password", "")
+    if not new_password or new_password != confirm_password:
+        flash("請輸入新密碼，且兩次輸入必須一致。", "error")
+        return render_template("reset_password.html", user_id=user_id, code_sent=True)
+    conn = get_conn()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT ID FROM Users WHERE UserID = ?", (user_id,))
+        user = cursor.fetchone()
+    finally:
+        conn.close()
+    if not user or not re.fullmatch(r"\d{6}", code) or not _consume_code(user.ID, "reset_password", code):
+        flash("驗證碼無效、已過期或輸入次數過多。", "error")
+        return render_template("reset_password.html", user_id=user_id, code_sent=True)
+    conn = get_conn()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE Users SET Password = ? WHERE ID = ?", (generate_password_hash(new_password), user.ID))
+        conn.commit()
+    finally:
+        conn.close()
+    write_audit_log("auth_password_reset_completed", user_id=user.ID)
+    flash("密碼已重設，請使用新密碼登入。", "success")
+    return redirect(url_for("auth.login"))
 
 
 # 登入
@@ -187,6 +423,28 @@ def manage_user():
     cursor = conn.cursor()
 
     if action == "delete":
+        if str(guid_id) == str(session.get("ID")):
+            conn.close()
+            return jsonify({"success": False, "message": "無法刪除目前正在登入的帳號。"}), 400
+
+        related_checks = (
+            ("文件版本", "DocVersion", "Uploader"),
+            ("版本比對紀錄", "MappingRecord", "Creator"),
+            ("筆記轉移紀錄", "NoteTransferHistory", "UserID"),
+            ("背景任務", "BackgroundTasks", "UserID"),
+        )
+        related_labels = []
+        for label, table, column in related_checks:
+            cursor.execute(f"SELECT COUNT(*) FROM {table} WHERE {column} = ?", (guid_id,))
+            if cursor.fetchone()[0]:
+                related_labels.append(label)
+        if related_labels:
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": f"此帳號已有{'、'.join(related_labels)}，為避免遺失資料，無法直接刪除。",
+            }), 409
+
         cursor.execute("SELECT DocID, StorageName FROM Documents WHERE User_ID = ?", (guid_id,))
         user_docs = cursor.fetchall()
 
@@ -201,8 +459,10 @@ def manage_user():
                 os.remove(json_path)
 
         cursor.execute("DELETE FROM Documents WHERE User_ID = ?", (guid_id,))
+        cursor.execute("DELETE FROM AccountVerificationCodes WHERE UserID = ?", (guid_id,))
         cursor.execute("DELETE FROM Users WHERE ID = ?", (guid_id,))      
         conn.commit()
+        conn.close()
         return jsonify({"success": True, "message": "Delete Successful"})
 
     elif action == "edit":

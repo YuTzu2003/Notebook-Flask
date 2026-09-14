@@ -6,7 +6,7 @@ from flask import request, session
 from modules.db import execute_query
 
 
-_SENSITIVE_FIELDS = {"password", "pwd", "token", "secret"}
+_SENSITIVE_FIELDS = {"password", "pwd", "token", "secret", "code", "verification_code"}
 
 
 def _sanitize(value):

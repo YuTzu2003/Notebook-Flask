@@ -92,6 +92,12 @@ body {
     border-left: 4px solid #dc3545;
 }
 
+.alert-custom.alert-success {
+    background-color: #ecfdf3;
+    color: #166534;
+    border-left-color: #198754;
+}
+
 .footer-text {
     text-align: center;
     margin-top: 1.5rem;
