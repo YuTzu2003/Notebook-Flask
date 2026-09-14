@@ -36,12 +36,14 @@ def _send_code(user_id, purpose, email):
         resend_seconds = current_app.config["VERIFICATION_CODE_RESEND_SECONDS"]
         max_per_hour = current_app.config["VERIFICATION_CODE_MAX_PER_HOUR"]
         cursor.execute("""SELECT COUNT(*) FROM AccountVerificationCodes
-                          WHERE UserID = ? AND CreatedAt > DATEADD(second, ?, SYSDATETIMEOFFSET())""",
-                       (user_id, -resend_seconds))
+                          WHERE UserID = ? AND Purpose = ?
+                            AND CreatedAt > DATEADD(second, ?, SYSDATETIMEOFFSET())""",
+                       (user_id, purpose, -resend_seconds))
         if cursor.fetchone()[0]:
             raise CodeRequestLimitError(f"請於 {resend_seconds} 秒後再重新寄送驗證碼。")
         cursor.execute("""SELECT COUNT(*) FROM AccountVerificationCodes
-                          WHERE UserID = ? AND CreatedAt > DATEADD(hour, -1, SYSDATETIMEOFFSET())""", (user_id,))
+                          WHERE UserID = ? AND Purpose = ?
+                            AND CreatedAt > DATEADD(hour, -1, SYSDATETIMEOFFSET())""", (user_id, purpose))
         if cursor.fetchone()[0] >= max_per_hour:
             raise CodeRequestLimitError("此帳號目前寄送驗證碼次數過多，請 1 小時後再試。")
         cursor.execute("""UPDATE AccountVerificationCodes SET UsedAt = SYSDATETIMEOFFSET()
@@ -91,23 +93,6 @@ def _consume_code(user_id, purpose, code):
     finally:
         conn.close()
 
-
-@auth_bp.before_app_request
-def require_verified_email():
-    """Existing accounts enrol an email before accessing application features."""
-    if (not current_app.config["EMAIL_VERIFICATION_ENABLED"] or not session.get("ID")
-            or request.endpoint in {"static", "auth.profile", "auth.request_email_verification", "auth.verify_email", "auth.resend_email_verification", "auth.logout"}):
-        return None
-    conn = get_conn()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT EmailVerifiedAt FROM Users WHERE ID = ?", (session["ID"],))
-        user = cursor.fetchone()
-    finally:
-        conn.close()
-    if not user or not user.EmailVerifiedAt:
-        flash("請先綁定並驗證 Email，才能使用系統功能。", "error")
-        return redirect(url_for("auth.profile", setup_email=1))
 
 # 權限
 def login_required(func):
@@ -256,6 +241,25 @@ def resend_email_verification():
     return redirect(url_for("auth.profile", setup_email=1, verify_email=1))
 
 
+@auth_bp.post("/profile/email/unbind")
+@login_required
+def unbind_email():
+    """Remove a verified email and invalidate any remaining account codes."""
+    conn = get_conn()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE Users SET Email = NULL, EmailVerifiedAt = NULL WHERE ID = ?", (session["ID"],))
+        cursor.execute("""UPDATE AccountVerificationCodes SET UsedAt = SYSDATETIMEOFFSET()
+                          WHERE UserID = ? AND UsedAt IS NULL""", (session["ID"],))
+        conn.commit()
+    finally:
+        conn.close()
+    session.pop("pending_email", None)
+    write_audit_log("auth_email_unbound")
+    flash("Email 已取消綁定。", "success")
+    return redirect(url_for("auth.profile"))
+
+
 @auth_bp.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
     if request.method == "POST":
@@ -263,17 +267,22 @@ def forgot_password():
         conn = get_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT ID, Email FROM Users WHERE UserID = ? AND EmailVerifiedAt IS NOT NULL", (user_id,))
+            cursor.execute("SELECT ID, Email, EmailVerifiedAt FROM Users WHERE UserID = ?", (user_id,))
             user = cursor.fetchone()
         finally:
             conn.close()
-        if user:
-            try:
-                _send_code(user.ID, "reset_password", user.Email)
-                write_audit_log("auth_password_reset_requested", user_id=user.ID)
-            except (MailDeliveryError, CodeRequestLimitError):
-                pass
-        # Do not reveal whether an ID or email binding exists.
+        if not user or not user.EmailVerifiedAt:
+            flash("此帳號目前無法自行重設密碼，因無綁定 Email，請聯絡資訊室協助更改密碼。", "error")
+            return redirect(url_for("auth.forgot_password"))
+        try:
+            _send_code(user.ID, "reset_password", user.Email)
+            write_audit_log("auth_password_reset_requested", user_id=user.ID)
+        except CodeRequestLimitError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("auth.forgot_password"))
+        except MailDeliveryError:
+            flash("目前無法寄送驗證碼，請稍後再試或聯絡資訊室協助處理。", "error")
+            return redirect(url_for("auth.forgot_password"))
         flash("驗證碼已寄出，請至信箱查看。", "success")
         return redirect(url_for("auth.reset_password", user_id=user_id, code_sent=1))
     return render_template("forgot_password.html")
@@ -342,7 +351,11 @@ def login():
             conn.close()
             
             write_audit_log("auth_login_success", {"login_id": emp_id, "status": "success"}, user_id=user.ID, remote_addr=ip_address)
-            
+
+            is_admin = str(getattr(user, "Position", "")).strip().lower() == "admin"
+            if (current_app.config["EMAIL_VERIFICATION_ENABLED"] and not is_admin
+                    and not getattr(user, "EmailVerifiedAt", None)):
+                return redirect(url_for("auth.profile", setup_email=1, email_suggestion=1))
             return redirect(url_for("bp_index.index"))
 
         conn.close()
