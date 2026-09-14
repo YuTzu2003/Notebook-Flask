@@ -260,6 +260,20 @@ def unbind_email():
     return redirect(url_for("auth.profile"))
 
 
+@auth_bp.post("/profile/email/dismiss-suggestion")
+@login_required
+def dismiss_email_suggestion():
+    conn = get_conn()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE Users SET EmailPromptDismissedAt = SYSDATETIMEOFFSET() WHERE ID = ?", (session["ID"],))
+        conn.commit()
+    finally:
+        conn.close()
+    write_audit_log("auth_email_suggestion_dismissed")
+    return redirect(url_for("bp_index.index"))
+
+
 @auth_bp.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
     if request.method == "POST":
@@ -354,7 +368,8 @@ def login():
 
             is_admin = str(getattr(user, "Position", "")).strip().lower() == "admin"
             if (current_app.config["EMAIL_VERIFICATION_ENABLED"] and not is_admin
-                    and not getattr(user, "EmailVerifiedAt", None)):
+                    and not getattr(user, "EmailVerifiedAt", None)
+                    and not getattr(user, "EmailPromptDismissedAt", None)):
                 return redirect(url_for("auth.profile", setup_email=1, email_suggestion=1))
             return redirect(url_for("bp_index.index"))
 

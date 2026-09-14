@@ -72,8 +72,11 @@
                     若暫時不綁定 Email，仍可使用系統；但日後忘記密碼時，無法自行重設，需聯絡資訊室協助處理。
                 </div>
                 {% if request.args.get('email_suggestion') %}
-                <div class="mt-3">
+                <div class="d-flex flex-wrap gap-2 mt-3">
                     <a class="btn btn-outline-secondary" href="{{ url_for('bp_index.index') }}">暫時略過，前往主畫面</a>
+                    <form method="post" action="{{ url_for('auth.dismiss_email_suggestion') }}">
+                        <button class="btn btn-outline-secondary" type="submit">不綁定，下次不再顯示</button>
+                    </form>
                 </div>
                 {% endif %}
                 {% endif %}

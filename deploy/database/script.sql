@@ -24,6 +24,8 @@ IF COL_LENGTH(N'dbo.Users', N'Email') IS NULL
     ALTER TABLE dbo.Users ADD Email nvarchar(254) NULL;
 IF COL_LENGTH(N'dbo.Users', N'EmailVerifiedAt') IS NULL
     ALTER TABLE dbo.Users ADD EmailVerifiedAt datetimeoffset(7) NULL;
+IF COL_LENGTH(N'dbo.Users', N'EmailPromptDismissedAt') IS NULL
+    ALTER TABLE dbo.Users ADD EmailPromptDismissedAt datetimeoffset(7) NULL;
 GO
 
 IF OBJECT_ID(N'dbo.AccountVerificationCodes', N'U') IS NULL
